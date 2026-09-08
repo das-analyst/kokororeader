@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.wav
+tokenizer_vocab.txt
+
+# Models (Large binary files - download via instructions or script)
+*.onnx
+models/voices-v1.0.bin
+
+# Android & Gradle
+.gradle/
+**/build/
+**/.cxx/
+local.properties
+*.iml
+.idea/
+.DS_Store
+Thumbs.db
