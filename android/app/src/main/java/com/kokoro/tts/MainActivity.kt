@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var rvLibrary: RecyclerView
     private lateinit var tvEmptyLibrary: TextView
     private lateinit var btnConvertEbook: Button
+    private lateinit var btnOpenTxt: Button
     private lateinit var btnAddSample: Button
 
     private var pendingExportBook: SavedBook? = null
@@ -78,6 +79,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        val rootScrollView = findViewById<android.view.View>(R.id.rootScrollView)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootScrollView) { v, insets ->
+            val systemBars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
         voiceLoader = VoiceStyleLoader(applicationContext)
         localBookManager = LocalBookManager(applicationContext)
         PdfToTextConverter.init(applicationContext)
@@ -97,6 +107,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun initViews() {
         btnConvertEbook = findViewById(R.id.btnConvertEbook)
+        btnOpenTxt = findViewById(R.id.btnOpenTxt)
         btnAddSample = findViewById(R.id.btnAddSample)
         rvLibrary = findViewById(R.id.rvLibrary)
         tvEmptyLibrary = findViewById(R.id.tvEmptyLibrary)
@@ -112,6 +123,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 arrayOf(
                     "application/epub+zip",
                     "application/pdf",
+                    "text/plain",
+                    "*/*"
+                )
+            )
+        }
+
+        btnOpenTxt.setOnClickListener {
+            openDocumentLauncher.launch(
+                arrayOf(
                     "text/plain",
                     "*/*"
                 )
@@ -226,15 +246,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val etBookTitle = dialogView.findViewById<EditText>(R.id.etBookTitle)
         val tvConversionStats = dialogView.findViewById<TextView>(R.id.tvConversionStats)
         val tvTextPreview = dialogView.findViewById<TextView>(R.id.tvTextPreview)
+        val btnSaveToLibrary = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSaveToLibrary)
+        val btnExportTxt = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnExportTxt)
+        val btnReadNow = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadNow)
+        val btnCloseDialog = dialogView.findViewById<Button>(R.id.btnCloseDialog)
 
         tvConvertingStatus.text = "Converting '$displayName' to readable text..."
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Convert Ebook")
             .setView(dialogView)
-            .setCancelable(false)
-            .setNegativeButton("Cancel", null)
+            .setCancelable(true)
             .create()
+
+        btnCloseDialog.setOnClickListener {
+            dialog.dismiss()
+        }
 
         dialog.show()
 
@@ -275,8 +302,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     tvConversionStats.text = "✔ Extracted ${result.chapterCount} Chapters • ~$wordCount words • $sizeKb KB"
                     tvTextPreview.text = result.content.take(1500) + if (result.content.length > 1500) "\n\n[... Remaining content preserved ...]" else ""
 
-                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE).text = "Close"
-                    dialog.setButton(AlertDialog.BUTTON_POSITIVE, "Save to Library") { _, _ ->
+                    btnSaveToLibrary.setOnClickListener {
                         val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
                         val saved = localBookManager.saveBook(
                             title = finalTitle,
@@ -286,9 +312,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             chapterCount = result.chapterCount
                         )
                         refreshLibrary()
+                        dialog.dismiss()
                         Toast.makeText(this, "Saved '${saved.title}' to library!", Toast.LENGTH_SHORT).show()
                     }
-                    dialog.setButton(AlertDialog.BUTTON_NEUTRAL, "Export .txt") { _, _ ->
+
+                    btnExportTxt.setOnClickListener {
                         val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
                         val saved = localBookManager.saveBook(
                             title = finalTitle,
@@ -299,7 +327,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         )
                         refreshLibrary()
                         pendingExportBook = saved
+                        dialog.dismiss()
                         exportDocumentLauncher.launch("${finalTitle.replace(Regex("[^a-zA-Z0-9._-]"), "_")}.txt")
+                    }
+
+                    btnReadNow.setOnClickListener {
+                        val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
+                        val saved = localBookManager.saveBook(
+                            title = finalTitle,
+                            author = result.author,
+                            originalFormat = result.originalFormat,
+                            content = result.content,
+                            chapterCount = result.chapterCount
+                        )
+                        refreshLibrary()
+                        dialog.dismiss()
+                        ReaderActivity.start(this, filePath = saved.filePath, bookId = saved.id)
                     }
                 }
             } catch (e: Exception) {

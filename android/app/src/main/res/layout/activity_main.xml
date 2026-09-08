@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootScrollView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
+    android:fitsSystemWindows="true"
     android:background="#FAF9F6">
 
     <LinearLayout
+        android:id="@+id/mainContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="20dp">
 
         <!-- App Header -->
         <TextView
@@ -33,7 +36,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="3dp"
             app:cardBackgroundColor="#FFFFFF"
@@ -49,7 +52,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="📥 Convert Ebook to Readable Text"
+                    android:text="📥 Convert or Open Ebook"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="#0D47A1" />
@@ -58,7 +61,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="Extracts clean text from EPUB or PDF, strips messy headers and broken hyphens, and saves to your local library."
+                    android:text="Convert EPUB or PDF into clean text with formatted chapters, or open an existing plain text file directly."
                     android:textSize="12sp"
                     android:textColor="#555555" />
 
@@ -67,10 +70,19 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="Select EPUB or PDF to Convert"
+                    android:text="Convert EPUB or PDF to Text"
                     app:icon="@android:drawable/ic_menu_upload"
                     android:backgroundTint="#1976D2"
                     android:textColor="#FFFFFF" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOpenTxt"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Open Plain Text (.txt) File"
+                    app:icon="@android:drawable/ic_menu_agenda" />
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -81,7 +93,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="22dp"
             android:layout_marginBottom="8dp">
 
             <TextView
@@ -113,7 +125,7 @@
             android:id="@+id/tvEmptyLibrary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="No books saved yet.\nTap 'Select EPUB or PDF' above to convert your first book!"
+            android:text="No books saved yet.\nTap 'Convert EPUB or PDF' or 'Open Plain Text' above to get started!"
             android:gravity="center"
             android:textColor="#888888"
             android:textSize="13sp"

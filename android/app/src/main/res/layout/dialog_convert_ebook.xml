@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -12,7 +13,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center"
-        android:padding="16dp">
+        android:padding="24dp">
 
         <ProgressBar
             android:id="@+id/pbConverting"
@@ -60,6 +61,7 @@
             android:text="12 Chapters • 45,000 words"
             android:textSize="12sp"
             android:textColor="#2E7D32"
+            android:textStyle="bold"
             android:layout_marginTop="4dp" />
 
         <TextView
@@ -69,11 +71,11 @@
             android:textSize="12sp"
             android:textStyle="bold"
             android:textColor="#666666"
-            android:layout_marginTop="12dp" />
+            android:layout_marginTop="10dp" />
 
         <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="140dp"
+            android:layout_height="120dp"
             android:background="#F0F0F0"
             android:padding="8dp"
             android:layout_marginTop="4dp">
@@ -85,6 +87,52 @@
                 android:textSize="12sp"
                 android:textColor="#333333" />
         </ScrollView>
+
+        <!-- Action Buttons Directly In Layout -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSaveToLibrary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="💾 Save to Local Library"
+            android:backgroundTint="#1976D2"
+            android:textColor="#FFFFFF" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnExportTxt"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Export .txt"
+                app:icon="@android:drawable/ic_menu_save" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnReadNow"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Read Now"
+                app:icon="@android:drawable/ic_media_play" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnCloseDialog"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Close"
+            android:textColor="#666666" />
 
     </LinearLayout>
 

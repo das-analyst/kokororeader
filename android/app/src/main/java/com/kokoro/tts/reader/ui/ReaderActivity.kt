@@ -80,6 +80,15 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         bookId = intent.getStringExtra(EXTRA_BOOK_ID)
         val filePath = intent.getStringExtra(EXTRA_FILE_PATH)
 
+        val readerRoot = findViewById<android.view.View>(R.id.readerRoot)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(readerRoot) { v, insets ->
+            val systemBars = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
+        }
+
         initViews()
         initEngine()
 
