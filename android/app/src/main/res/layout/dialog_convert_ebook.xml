@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Loading State -->
+    <LinearLayout
+        android:id="@+id/layoutConverting"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="16dp">
+
+        <ProgressBar
+            android:id="@+id/pbConverting"
+            android:layout_width="48dp"
+            android:layout_height="48dp" />
+
+        <TextView
+            android:id="@+id/tvConvertingStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Converting ebook to clean text..."
+            android:textSize="14sp"
+            android:textColor="#333333" />
+    </LinearLayout>
+
+    <!-- Preview & Save State -->
+    <LinearLayout
+        android:id="@+id/layoutPreview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Book Title"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="#666666" />
+
+        <EditText
+            android:id="@+id/etBookTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:textColor="#111111"
+            android:maxLines="2" />
+
+        <TextView
+            android:id="@+id/tvConversionStats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="12 Chapters • 45,000 words"
+            android:textSize="12sp"
+            android:textColor="#2E7D32"
+            android:layout_marginTop="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Text Preview:"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textColor="#666666"
+            android:layout_marginTop="12dp" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:background="#F0F0F0"
+            android:padding="8dp"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:id="@+id/tvTextPreview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#333333" />
+        </ScrollView>
+
+    </LinearLayout>
+
+</LinearLayout>

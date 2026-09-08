@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.ImageButton
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -17,20 +19,27 @@ import com.kokoro.tts.engine.KokoroEngine
 import com.kokoro.tts.engine.PhonemeConverter
 import com.kokoro.tts.engine.Tokenizer
 import com.kokoro.tts.engine.VoiceStyleLoader
+import com.kokoro.tts.reader.manager.LocalBookManager
 import com.kokoro.tts.reader.model.Book
 import com.kokoro.tts.reader.model.SampleBook
+import com.kokoro.tts.reader.parser.TxtParser
 import com.kokoro.tts.reader.player.BookPlayer
+import java.io.File
 
 class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
 
     companion object {
         private const val TAG = "ReaderActivity"
-        const val EXTRA_BOOK = "extra_book"
+        const val EXTRA_FILE_PATH = "extra_file_path"
+        const val EXTRA_BOOK_ID = "extra_book_id"
 
-        fun start(context: Context, book: Book? = null) {
+        fun start(context: Context, filePath: String? = null, bookId: String? = null) {
             val intent = Intent(context, ReaderActivity::class.java)
-            if (book != null) {
-                intent.putExtra(EXTRA_BOOK, book)
+            if (filePath != null) {
+                intent.putExtra(EXTRA_FILE_PATH, filePath)
+            }
+            if (bookId != null) {
+                intent.putExtra(EXTRA_BOOK_ID, bookId)
             }
             context.startActivity(intent)
         }
@@ -40,16 +49,19 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
     private lateinit var phonemeConverter: PhonemeConverter
     private lateinit var tokenizer: Tokenizer
     private lateinit var voiceLoader: VoiceStyleLoader
-    private lateinit var player: BookPlayer
+    private var player: BookPlayer? = null
 
     private lateinit var book: Book
     private var currentChapterIndex = 0
+    private var bookId: String? = null
+    private lateinit var localBookManager: LocalBookManager
 
     private lateinit var tvBookTitle: TextView
     private lateinit var tvChapterTitle: TextView
     private lateinit var tvProgress: TextView
     private lateinit var tvVoiceSpeed: TextView
     private lateinit var rvSentences: RecyclerView
+    private lateinit var pbLoading: ProgressBar
     private lateinit var fabPlayPause: FloatingActionButton
     private lateinit var btnPrev: ImageButton
     private lateinit var btnNext: ImageButton
@@ -64,12 +76,19 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_reader)
 
-        val receivedBook = intent.getSerializableExtra(EXTRA_BOOK) as? Book
-        book = receivedBook ?: SampleBook.SAMPLE_BOOK
+        localBookManager = LocalBookManager(this)
+        bookId = intent.getStringExtra(EXTRA_BOOK_ID)
+        val filePath = intent.getStringExtra(EXTRA_FILE_PATH)
 
         initViews()
         initEngine()
-        loadChapter(0)
+
+        if (filePath != null) {
+            loadBookFromDisk(filePath)
+        } else {
+            book = SampleBook.SAMPLE_BOOK
+            onBookReady(book)
+        }
     }
 
     private fun initViews() {
@@ -78,6 +97,7 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         tvProgress = findViewById(R.id.tvProgress)
         tvVoiceSpeed = findViewById(R.id.tvVoiceSpeed)
         rvSentences = findViewById(R.id.rvSentences)
+        pbLoading = findViewById(R.id.pbLoading)
         fabPlayPause = findViewById(R.id.fabPlayPause)
         btnPrev = findViewById(R.id.btnPrevSentence)
         btnNext = findViewById(R.id.btnNextSentence)
@@ -85,127 +105,165 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         btnToc = findViewById(R.id.btnToc)
         btnSettings = findViewById(R.id.btnSettings)
 
-        tvBookTitle.text = book.title
-
         layoutManager = LinearLayoutManager(this)
         rvSentences.layoutManager = layoutManager
 
         sentenceAdapter = SentenceAdapter { clickedPosition ->
-            player.seekToSentence(clickedPosition)
-            if (!player.isCurrentlyPlaying()) {
-                player.play()
+            player?.seekToSentence(clickedPosition)
+            if (player?.isCurrentlyPlaying() != true) {
+                player?.play()
             }
         }
         rvSentences.adapter = sentenceAdapter
 
         fabPlayPause.setOnClickListener {
-            if (player.isCurrentlyPlaying()) {
-                player.pause()
+            val p = player ?: return@setOnClickListener
+            if (p.isCurrentlyPlaying()) {
+                p.pause()
             } else {
-                player.play()
+                p.play()
             }
         }
 
-        btnPrev.setOnClickListener { player.previousSentence() }
-        btnNext.setOnClickListener { player.nextSentence() }
+        btnPrev.setOnClickListener { player?.previousSentence() }
+        btnNext.setOnClickListener { player?.nextSentence() }
         btnBack.setOnClickListener { finish() }
-
-        btnToc.setOnClickListener { showTableOfContentsDialog() }
+        btnToc.setOnClickListener { showTableOfContents() }
         btnSettings.setOnClickListener { showVoiceSpeedDialog() }
-        tvVoiceSpeed.setOnClickListener { showVoiceSpeedDialog() }
     }
 
     private fun initEngine() {
-        tokenizer = Tokenizer.fromAssets(applicationContext, "vocab.json")
-        voiceLoader = VoiceStyleLoader(applicationContext)
-        phonemeConverter = PhonemeConverter(applicationContext, tokenizer)
-        kokoroEngine = KokoroEngine(applicationContext, "model_quantized.onnx")
+        tokenizer = Tokenizer.fromAssets(this, "vocab.json")
+        voiceLoader = VoiceStyleLoader(this)
+        phonemeConverter = PhonemeConverter(this, tokenizer)
+        kokoroEngine = KokoroEngine(this, "model_quantized.onnx")
 
-        kokoroEngine.initialize()
-
-        player = BookPlayer(
-            applicationContext,
-            kokoroEngine,
-            phonemeConverter,
-            tokenizer,
-            voiceLoader
-        )
-        player.listener = this
         updateVoiceSpeedLabel()
     }
 
-    private fun loadChapter(chapterIndex: Int) {
-        if (chapterIndex !in book.chapters.indices) return
+    private fun loadBookFromDisk(filePath: String) {
+        pbLoading.visibility = View.VISIBLE
+        rvSentences.visibility = View.INVISIBLE
+        tvBookTitle.text = "Loading book..."
 
+        Thread {
+            try {
+                val file = File(filePath)
+                val loadedBook = TxtParser.parse(file)
+                runOnUiThread {
+                    pbLoading.visibility = View.GONE
+                    rvSentences.visibility = View.VISIBLE
+                    book = loadedBook
+                    onBookReady(loadedBook)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load book from $filePath", e)
+                runOnUiThread {
+                    pbLoading.visibility = View.GONE
+                    Toast.makeText(this, "Failed to load book: ${e.message}", Toast.LENGTH_LONG).show()
+                    finish()
+                }
+            }
+        }.start()
+    }
+
+    private fun onBookReady(readyBook: Book) {
+        tvBookTitle.text = readyBook.title
+
+        player = BookPlayer(
+            kokoroEngine = kokoroEngine,
+            phonemeConverter = phonemeConverter,
+            tokenizer = tokenizer,
+            voiceLoader = voiceLoader,
+            listener = this
+        )
+
+        loadChapter(0)
+    }
+
+    private fun loadChapter(chapterIndex: Int) {
+        if (!::book.isInitialized || chapterIndex !in book.chapters.indices) return
         currentChapterIndex = chapterIndex
         val chapter = book.chapters[chapterIndex]
 
         tvChapterTitle.text = chapter.title
         sentenceAdapter.updateSentences(chapter.sentences)
-        player.setSentences(chapter.sentences, 0)
+
+        player?.setSentences(chapter.sentences)
         updateProgress(0)
 
-        rvSentences.scrollToPosition(0)
+        // Record reading position
+        bookId?.let { id ->
+            localBookManager.updateReadingPosition(id, chapterIndex, 0)
+        }
     }
 
     private fun updateProgress(sentenceIndex: Int) {
-        val chapter = book.chapters.getOrNull(currentChapterIndex) ?: return
-        val total = chapter.sentences.size
-        tvProgress.text = "Sentence ${sentenceIndex + 1} of $total • Chapter ${currentChapterIndex + 1}/${book.chapters.size}"
+        if (!::book.isInitialized || currentChapterIndex !in book.chapters.indices) return
+        val total = book.chapters[currentChapterIndex].sentences.size
+        tvProgress.text = "Sentence ${sentenceIndex + 1} of $total"
+
+        bookId?.let { id ->
+            localBookManager.updateReadingPosition(id, currentChapterIndex, sentenceIndex)
+        }
     }
 
     private fun updateVoiceSpeedLabel() {
-        val speedStr = String.format("%.1fx", player.currentSpeed)
-        tvVoiceSpeed.text = "${player.currentVoice} • $speedStr"
+        val voice = player?.currentVoice ?: "af_heart"
+        val speed = player?.currentSpeed ?: 1.0f
+        tvVoiceSpeed.text = "$voice • ${String.format("%.2fx", speed)}"
     }
 
-    private fun showTableOfContentsDialog() {
-        val chapterTitles = book.chapters.map { it.title }.toTypedArray()
+    private fun showTableOfContents() {
+        if (!::book.isInitialized) return
+        val chapterTitles = book.chapters.mapIndexed { idx, ch ->
+            if (idx == currentChapterIndex) "▶ ${ch.title}" else "   ${ch.title}"
+        }.toTypedArray()
+
         AlertDialog.Builder(this)
             .setTitle("Table of Contents")
-            .setSingleChoiceItems(chapterTitles, currentChapterIndex) { dialog, which ->
-                dialog.dismiss()
+            .setItems(chapterTitles) { _, which ->
                 if (which != currentChapterIndex) {
-                    player.pause()
+                    player?.pause()
                     loadChapter(which)
-                    player.play()
+                    player?.play()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Close", null)
             .show()
     }
 
     private fun showVoiceSpeedDialog() {
-        val voices = voiceLoader.getAvailableVoices().ifEmpty { listOf("af_heart", "am_adam") }
-        val speeds = listOf(0.75f, 1.0f, 1.25f, 1.5f)
-        val speedLabels = listOf("0.75x", "1.0x (Normal)", "1.25x (Fast)", "1.5x")
+        val p = player ?: return
+        val dialogView = layoutInflater.inflate(R.layout.dialog_voice_speed, null)
+        val spVoice = dialogView.findViewById<android.widget.Spinner>(R.id.dialogVoiceSpinner)
+        val spSpeed = dialogView.findViewById<android.widget.Spinner>(R.id.dialogSpeedSpinner)
 
-        val currentVoiceIdx = voices.indexOf(player.currentVoice).coerceAtLeast(0)
-        val currentSpeedIdx = speeds.indexOf(player.currentSpeed).let { if (it >= 0) it else 1 }
+        val voices = arrayOf("af_heart", "am_adam")
+        val voiceAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voices)
+        spVoice.adapter = voiceAdapter
+        spVoice.setSelection(voices.indexOf(p.currentVoice).coerceAtLeast(0))
 
-        val view = layoutInflater.inflate(R.layout.dialog_voice_speed, null)
-        val spVoice = view.findViewById<android.widget.Spinner>(R.id.dialogVoiceSpinner)
-        val spSpeed = view.findViewById<android.widget.Spinner>(R.id.dialogSpeedSpinner)
-
-        spVoice.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voices)
-        spVoice.setSelection(currentVoiceIdx)
-
-        spSpeed.adapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, speedLabels)
-        spSpeed.setSelection(currentSpeedIdx)
+        val speeds = arrayOf(0.75f, 1.0f, 1.25f, 1.5f)
+        val speedLabels = arrayOf("0.75x (Slow)", "1.0x (Normal)", "1.25x (Fast)", "1.5x (Very Fast)")
+        val speedAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, speedLabels)
+        spSpeed.adapter = speedAdapter
+        val speedIndex = speeds.indexOfFirst { kotlin.math.abs(it - p.currentSpeed) < 0.05f }.coerceAtLeast(1)
+        spSpeed.setSelection(speedIndex)
 
         AlertDialog.Builder(this)
-            .setTitle("Voice & Speed Settings")
-            .setView(view)
+            .setTitle("Reading Voice & Speed")
+            .setView(dialogView)
             .setPositiveButton("Apply") { _, _ ->
                 val selectedVoice = voices[spVoice.selectedItemPosition]
                 val selectedSpeed = speeds[spSpeed.selectedItemPosition]
 
-                player.currentVoice = selectedVoice
-                player.currentSpeed = selectedSpeed
+                p.currentVoice = selectedVoice
+                p.currentSpeed = selectedSpeed
                 updateVoiceSpeedLabel()
 
-                if (player.isCurrentlyPlaying()) {
-                    player.seekToSentence(player.getCurrentIndex())
+                if (p.isCurrentlyPlaying()) {
+                    p.seekToSentence(p.getCurrentIndex())
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -219,7 +277,6 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             sentenceAdapter.setActiveIndex(sentenceIndex)
             updateProgress(sentenceIndex)
 
-            // Smoothly center the active sentence on screen
             val firstVisible = layoutManager.findFirstVisibleItemPosition()
             val lastVisible = layoutManager.findLastVisibleItemPosition()
             if (sentenceIndex < firstVisible || sentenceIndex > lastVisible - 2) {
@@ -250,7 +307,7 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
     }
 
     override fun onDestroy() {
-        player.release()
+        player?.release()
         phonemeConverter.release()
         kokoroEngine.release()
         super.onDestroy()

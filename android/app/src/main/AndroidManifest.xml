@@ -9,7 +9,7 @@
         android:label="@string/app_name"
         android:roundIcon="@android:drawable/ic_btn_speak_now"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        android:theme="@style/Theme.KokoroTTS">
 
         <!-- System-wide Text to Speech Engine Service -->
         <service
@@ -40,8 +40,7 @@
         <activity
             android:name=".reader.ui.ReaderActivity"
             android:exported="false"
-            android:label="Kokoro Ebook Reader"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+            android:label="Kokoro Ebook Reader" />
 
     </application>
 

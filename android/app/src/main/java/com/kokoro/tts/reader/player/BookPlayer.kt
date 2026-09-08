@@ -25,11 +25,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * continuously plays the current sentence, guaranteeing 0 ms gap between sentences.
  */
 class BookPlayer(
-    private val context: Context,
     private val kokoroEngine: KokoroEngine,
     private val phonemeConverter: PhonemeConverter,
     private val tokenizer: Tokenizer,
-    private val voiceLoader: VoiceStyleLoader
+    private val voiceLoader: VoiceStyleLoader,
+    var listener: PlaybackListener? = null
 ) {
     companion object {
         private const val TAG = "BookPlayer"
@@ -44,7 +44,6 @@ class BookPlayer(
         fun onError(message: String)
     }
 
-    var listener: PlaybackListener? = null
 
     private var sentences: List<SentenceItem> = emptyList()
     private val currentSentenceIndex = AtomicInteger(0)

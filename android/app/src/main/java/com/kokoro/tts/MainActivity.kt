@@ -1,18 +1,35 @@
 package com.kokoro.tts
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
-import android.util.Log
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.kokoro.tts.engine.VoiceStyleLoader
+import com.kokoro.tts.reader.converter.ConvertedBookResult
+import com.kokoro.tts.reader.converter.EpubToTextConverter
+import com.kokoro.tts.reader.converter.PdfToTextConverter
+import com.kokoro.tts.reader.manager.LocalBookManager
+import com.kokoro.tts.reader.model.SavedBook
+import com.kokoro.tts.reader.ui.BookLibraryAdapter
+import com.kokoro.tts.reader.ui.ReaderActivity
+import java.io.File
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
@@ -28,14 +45,32 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var btnTestVoice: Button
     private lateinit var btnOpenSettings: Button
     private lateinit var statusText: TextView
-    private lateinit var btnReadSample: Button
-    private lateinit var btnOpenEbook: Button
 
+    // Ebook Library & Converter
+    private lateinit var localBookManager: LocalBookManager
+    private lateinit var libraryAdapter: BookLibraryAdapter
+    private lateinit var rvLibrary: RecyclerView
+    private lateinit var tvEmptyLibrary: TextView
+    private lateinit var btnConvertEbook: Button
+    private lateinit var btnAddSample: Button
+
+    private var pendingExportBook: SavedBook? = null
+    private var pendingConvertedResult: ConvertedBookResult? = null
+
+    // Document pickers
     private val openDocumentLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri: android.net.Uri? ->
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
         if (uri != null) {
-            loadEbookFromUri(uri)
+            handleSelectedEbookUri(uri)
+        }
+    }
+
+    private val exportDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            handleExportToUri(uri)
         }
     }
 
@@ -44,32 +79,67 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         setContentView(R.layout.activity_main)
 
         voiceLoader = VoiceStyleLoader(applicationContext)
+        localBookManager = LocalBookManager(applicationContext)
+        PdfToTextConverter.init(applicationContext)
 
-        btnReadSample = findViewById(R.id.btnReadSample)
-        btnOpenEbook = findViewById(R.id.btnOpenEbook)
+        initViews()
+        setupLibrary()
+        setupVoiceSpinner()
+
+        tts = TextToSpeech(this, this, packageName)
+        setupUtteranceListener()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshLibrary()
+    }
+
+    private fun initViews() {
+        btnConvertEbook = findViewById(R.id.btnConvertEbook)
+        btnAddSample = findViewById(R.id.btnAddSample)
+        rvLibrary = findViewById(R.id.rvLibrary)
+        tvEmptyLibrary = findViewById(R.id.tvEmptyLibrary)
+
         voiceSpinner = findViewById(R.id.voiceSpinner)
         sampleTextInput = findViewById(R.id.sampleTextInput)
         btnTestVoice = findViewById(R.id.btnTestVoice)
         btnOpenSettings = findViewById(R.id.btnOpenSettings)
         statusText = findViewById(R.id.statusText)
 
-        btnReadSample.setOnClickListener {
-            com.kokoro.tts.reader.ui.ReaderActivity.start(this, com.kokoro.tts.reader.model.SampleBook.SAMPLE_BOOK)
+        btnConvertEbook.setOnClickListener {
+            openDocumentLauncher.launch(
+                arrayOf(
+                    "application/epub+zip",
+                    "application/pdf",
+                    "text/plain",
+                    "*/*"
+                )
+            )
         }
 
-        btnOpenEbook.setOnClickListener {
-            openDocumentLauncher.launch(arrayOf(
-                "application/epub+zip",
-                "text/plain",
-                "*/*"
-            ))
+        btnAddSample.setOnClickListener {
+            localBookManager.saveBook(
+                title = "Pride and Prejudice",
+                author = "Jane Austen",
+                originalFormat = "TXT",
+                content = com.kokoro.tts.reader.model.SampleBook.SAMPLE_BOOK.chapters.joinToString("\n\n") {
+                    "CHAPTER ${it.index + 1}: ${it.title}\n\n${it.rawText}"
+                },
+                chapterCount = 2
+            )
+            refreshLibrary()
+            Toast.makeText(this, "Sample book added to library", Toast.LENGTH_SHORT).show()
         }
 
-        setupVoiceSpinner()
-
-        // Initialize TTS bound specifically to our own Kokoro engine package
-        tts = TextToSpeech(this, this, packageName)
-        setupUtteranceListener()
+        btnOpenSettings.setOnClickListener {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+        }
 
         btnTestVoice.setOnClickListener {
             if (tts?.isSpeaking == true) {
@@ -90,7 +160,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     putString("voiceName", selectedVoice)
                 }
 
-                // Set voice directly on TTS instance if available
                 tts?.voices?.find { it.name == selectedVoice }?.let { voice ->
                     tts?.voice = voice
                 }
@@ -98,23 +167,173 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "sample_utterance")
             }
         }
+    }
 
-        btnOpenSettings.setOnClickListener {
-            try {
-                val intent = Intent("com.android.settings.TTS_SETTINGS")
-                startActivity(intent)
-            } catch (e: Exception) {
-                val intent = Intent(Settings.ACTION_SETTINGS)
-                startActivity(intent)
+    private fun setupLibrary() {
+        rvLibrary.layoutManager = LinearLayoutManager(this)
+        libraryAdapter = BookLibraryAdapter(
+            onReadClicked = { book ->
+                ReaderActivity.start(this, filePath = book.filePath, bookId = book.id)
+            },
+            onExportClicked = { book ->
+                pendingExportBook = book
+                val defaultExportName = "${book.title.replace(Regex("[^a-zA-Z0-9._-]"), "_")}.txt"
+                exportDocumentLauncher.launch(defaultExportName)
+            },
+            onDeleteClicked = { book ->
+                AlertDialog.Builder(this)
+                    .setTitle("Delete Book")
+                    .setMessage("Remove '${book.title}' from your library?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        localBookManager.deleteBook(book.id)
+                        refreshLibrary()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
+        )
+        rvLibrary.adapter = libraryAdapter
+        refreshLibrary()
+    }
+
+    private fun refreshLibrary() {
+        val books = localBookManager.getAllSavedBooks()
+        libraryAdapter.submitList(books)
+        if (books.isEmpty()) {
+            tvEmptyLibrary.visibility = View.VISIBLE
+            rvLibrary.visibility = View.GONE
+        } else {
+            tvEmptyLibrary.visibility = View.GONE
+            rvLibrary.visibility = View.VISIBLE
+        }
+    }
+
+    private fun handleSelectedEbookUri(uri: Uri) {
+        var displayName = "Opened Document"
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) {
+                    displayName = cursor.getString(nameIndex) ?: displayName
+                }
+            }
+        }
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_convert_ebook, null)
+        val layoutConverting = dialogView.findViewById<View>(R.id.layoutConverting)
+        val tvConvertingStatus = dialogView.findViewById<TextView>(R.id.tvConvertingStatus)
+        val layoutPreview = dialogView.findViewById<View>(R.id.layoutPreview)
+        val etBookTitle = dialogView.findViewById<EditText>(R.id.etBookTitle)
+        val tvConversionStats = dialogView.findViewById<TextView>(R.id.tvConversionStats)
+        val tvTextPreview = dialogView.findViewById<TextView>(R.id.tvTextPreview)
+
+        tvConvertingStatus.text = "Converting '$displayName' to readable text..."
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Convert Ebook")
+            .setView(dialogView)
+            .setCancelable(false)
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.show()
+
+        Thread {
+            try {
+                val inputStream = contentResolver.openInputStream(uri)
+                    ?: throw IllegalArgumentException("Could not open file stream")
+
+                val result: ConvertedBookResult = when {
+                    displayName.endsWith(".pdf", ignoreCase = true) -> {
+                        PdfToTextConverter.convert(applicationContext, inputStream, displayName.removeSuffix(".pdf"))
+                    }
+                    displayName.endsWith(".epub", ignoreCase = true) -> {
+                        EpubToTextConverter.convert(inputStream, displayName.removeSuffix(".epub"))
+                    }
+                    else -> {
+                        // Plain text
+                        val text = inputStream.bufferedReader().use { it.readText() }
+                        ConvertedBookResult(
+                            title = displayName.substringBeforeLast("."),
+                            author = "Unknown Author",
+                            content = text,
+                            chapterCount = 1,
+                            originalFormat = "TXT"
+                        )
+                    }
+                }
+
+                pendingConvertedResult = result
+
+                runOnUiThread {
+                    layoutConverting.visibility = View.GONE
+                    layoutPreview.visibility = View.VISIBLE
+
+                    etBookTitle.setText(result.title)
+                    val wordCount = result.content.split(Regex("\\s+")).size
+                    val sizeKb = result.content.toByteArray().size / 1024
+                    tvConversionStats.text = "✔ Extracted ${result.chapterCount} Chapters • ~$wordCount words • $sizeKb KB"
+                    tvTextPreview.text = result.content.take(1500) + if (result.content.length > 1500) "\n\n[... Remaining content preserved ...]" else ""
+
+                    dialog.getButton(AlertDialog.BUTTON_NEGATIVE).text = "Close"
+                    dialog.setButton(AlertDialog.BUTTON_POSITIVE, "Save to Library") { _, _ ->
+                        val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
+                        val saved = localBookManager.saveBook(
+                            title = finalTitle,
+                            author = result.author,
+                            originalFormat = result.originalFormat,
+                            content = result.content,
+                            chapterCount = result.chapterCount
+                        )
+                        refreshLibrary()
+                        Toast.makeText(this, "Saved '${saved.title}' to library!", Toast.LENGTH_SHORT).show()
+                    }
+                    dialog.setButton(AlertDialog.BUTTON_NEUTRAL, "Export .txt") { _, _ ->
+                        val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
+                        val saved = localBookManager.saveBook(
+                            title = finalTitle,
+                            author = result.author,
+                            originalFormat = result.originalFormat,
+                            content = result.content,
+                            chapterCount = result.chapterCount
+                        )
+                        refreshLibrary()
+                        pendingExportBook = saved
+                        exportDocumentLauncher.launch("${finalTitle.replace(Regex("[^a-zA-Z0-9._-]"), "_")}.txt")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to convert ebook: $displayName", e)
+                runOnUiThread {
+                    dialog.dismiss()
+                    AlertDialog.Builder(this)
+                        .setTitle("Conversion Failed")
+                        .setMessage("Failed to parse '$displayName':\n${e.localizedMessage ?: e.message}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }.start()
+    }
+
+    private fun handleExportToUri(uri: Uri) {
+        val book = pendingExportBook ?: return
+        try {
+            contentResolver.openOutputStream(uri)?.use { outputStream ->
+                localBookManager.exportBook(book, outputStream)
+            }
+            Toast.makeText(this, "Exported '${book.title}' successfully!", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export book", e)
+            Toast.makeText(this, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        } finally {
+            pendingExportBook = null
         }
     }
 
     private fun setupVoiceSpinner() {
         val voices = voiceLoader.getAvailableVoices()
-        val voiceList = if (voices.isEmpty()) listOf(KokoroTtsService.DEFAULT_VOICE) else voices
-
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voiceList)
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voices)
         voiceSpinner.adapter = adapter
     }
 
@@ -122,14 +341,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
                 runOnUiThread {
-                    statusText.text = "Speaking..."
+                    statusText.text = "Synthesizing and playing..."
                     btnTestVoice.text = "Stop"
                 }
             }
 
             override fun onDone(utteranceId: String?) {
                 runOnUiThread {
-                    statusText.text = "Kokoro TTS engine ready"
+                    statusText.text = "Playback finished"
                     btnTestVoice.text = getString(R.string.btn_test)
                 }
             }
@@ -137,14 +356,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
                 runOnUiThread {
-                    statusText.text = "Error during synthesis"
-                    btnTestVoice.text = getString(R.string.btn_test)
-                }
-            }
-
-            override fun onError(utteranceId: String?, errorCode: Int) {
-                runOnUiThread {
-                    statusText.text = "Synthesis error (code: $errorCode)"
+                    statusText.text = "Error during playback"
                     btnTestVoice.text = getString(R.string.btn_test)
                 }
             }
@@ -153,55 +365,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.US)
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                statusText.text = "Language US not supported"
-            } else {
-                statusText.text = "Kokoro TTS engine ready"
-            }
+            tts?.language = Locale.US
+            statusText.text = "Kokoro TTS engine ready"
         } else {
-            statusText.text = "Failed to connect to Kokoro TTS service"
+            statusText.text = "TTS initialization failed: error $status"
         }
-    }
-
-    private fun loadEbookFromUri(uri: android.net.Uri) {
-        statusText.text = "Loading and parsing ebook..."
-        Thread {
-            try {
-                val contentResolver = applicationContext.contentResolver
-                val inputStream = contentResolver.openInputStream(uri)
-                if (inputStream == null) {
-                    runOnUiThread { statusText.text = "Failed to open file stream" }
-                    return@Thread
-                }
-
-                var displayName = "Opened Book"
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (nameIndex >= 0) {
-                            displayName = cursor.getString(nameIndex) ?: displayName
-                        }
-                    }
-                }
-
-                val book = if (displayName.endsWith(".epub", ignoreCase = true)) {
-                    com.kokoro.tts.reader.parser.EpubParser.parse(inputStream, displayName)
-                } else {
-                    com.kokoro.tts.reader.parser.TxtParser.parse(inputStream, displayName)
-                }
-
-                runOnUiThread {
-                    statusText.text = "Kokoro TTS engine ready"
-                    com.kokoro.tts.reader.ui.ReaderActivity.start(this, book)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error opening ebook from URI: $uri", e)
-                runOnUiThread {
-                    statusText.text = "Failed to parse book: ${e.message}"
-                }
-            }
-        }.start()
     }
 
     override fun onDestroy() {
