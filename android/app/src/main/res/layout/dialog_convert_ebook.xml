@@ -88,6 +88,16 @@
                 android:textColor="#333333" />
         </ScrollView>
 
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/cbNormalizeSpeech"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Expand numbers &amp; abbreviations into spoken words (e.g. $10 → ten dollars, Henry VIII → Henry the Eighth)"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:checked="false" />
+
         <!-- Action Buttons Directly In Layout -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSaveToLibrary"

@@ -71,5 +71,8 @@ dependencies {
 
     // PDF Text Extraction (Pure Java, 16 KB page-size safe)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+    // Unit Testing
+    testImplementation("junit:junit:4.13.2")
 }
 

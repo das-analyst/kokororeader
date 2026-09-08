@@ -22,6 +22,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.kokoro.tts.engine.VoiceStyleLoader
+import com.kokoro.tts.engine.normalizer.ArtifactCleaner
+import com.kokoro.tts.engine.normalizer.TextNormalizer
 import com.kokoro.tts.reader.converter.ConvertedBookResult
 import com.kokoro.tts.reader.converter.EpubToTextConverter
 import com.kokoro.tts.reader.converter.PdfToTextConverter
@@ -246,6 +248,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val etBookTitle = dialogView.findViewById<EditText>(R.id.etBookTitle)
         val tvConversionStats = dialogView.findViewById<TextView>(R.id.tvConversionStats)
         val tvTextPreview = dialogView.findViewById<TextView>(R.id.tvTextPreview)
+        val cbNormalizeSpeech = dialogView.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.cbNormalizeSpeech)
         val btnSaveToLibrary = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSaveToLibrary)
         val btnExportTxt = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnExportTxt)
         val btnReadNow = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadNow)
@@ -270,7 +273,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 val inputStream = contentResolver.openInputStream(uri)
                     ?: throw IllegalArgumentException("Could not open file stream")
 
-                val result: ConvertedBookResult = when {
+                val baseResult: ConvertedBookResult = when {
                     displayName.endsWith(".pdf", ignoreCase = true) -> {
                         PdfToTextConverter.convert(applicationContext, inputStream, displayName.removeSuffix(".pdf"))
                     }
@@ -279,7 +282,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     }
                     else -> {
                         // Plain text
-                        val text = inputStream.bufferedReader().use { it.readText() }
+                        val rawText = inputStream.bufferedReader().use { it.readText() }
+                        val text = ArtifactCleaner.clean(rawText)
                         ConvertedBookResult(
                             title = displayName.substringBeforeLast("."),
                             author = "Unknown Author",
@@ -290,26 +294,48 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     }
                 }
 
-                pendingConvertedResult = result
+                var currentDisplayedResult = baseResult
+                pendingConvertedResult = baseResult
 
                 runOnUiThread {
                     layoutConverting.visibility = View.GONE
                     layoutPreview.visibility = View.VISIBLE
 
-                    etBookTitle.setText(result.title)
-                    val wordCount = result.content.split(Regex("\\s+")).size
-                    val sizeKb = result.content.toByteArray().size / 1024
-                    tvConversionStats.text = "✔ Extracted ${result.chapterCount} Chapters • ~$wordCount words • $sizeKb KB"
-                    tvTextPreview.text = result.content.take(1500) + if (result.content.length > 1500) "\n\n[... Remaining content preserved ...]" else ""
+                    etBookTitle.setText(baseResult.title)
+
+                    fun updateStatsAndPreview(content: String) {
+                        val wordCount = content.split(Regex("\\s+")).size
+                        val sizeKb = content.toByteArray().size / 1024
+                        tvConversionStats.text = "✔ Extracted ${baseResult.chapterCount} Chapters • ~$wordCount words • $sizeKb KB"
+                        tvTextPreview.text = content.take(1500) + if (content.length > 1500) "\n\n[... Remaining content preserved ...]" else ""
+                    }
+
+                    updateStatsAndPreview(baseResult.content)
+
+                    cbNormalizeSpeech.setOnCheckedChangeListener { _, isChecked ->
+                        Thread {
+                            val activeContent = if (isChecked) {
+                                TextNormalizer.normalize(baseResult.content)
+                            } else {
+                                baseResult.content
+                            }
+                            currentDisplayedResult = baseResult.copy(content = activeContent)
+                            pendingConvertedResult = currentDisplayedResult
+                            runOnUiThread {
+                                updateStatsAndPreview(activeContent)
+                            }
+                        }.start()
+                    }
 
                     btnSaveToLibrary.setOnClickListener {
-                        val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
+                        val toSave = pendingConvertedResult ?: baseResult
+                        val finalTitle = etBookTitle.text.toString().ifBlank { toSave.title }
                         val saved = localBookManager.saveBook(
                             title = finalTitle,
-                            author = result.author,
-                            originalFormat = result.originalFormat,
-                            content = result.content,
-                            chapterCount = result.chapterCount
+                            author = toSave.author,
+                            originalFormat = toSave.originalFormat,
+                            content = toSave.content,
+                            chapterCount = toSave.chapterCount
                         )
                         refreshLibrary()
                         dialog.dismiss()
@@ -317,13 +343,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     }
 
                     btnExportTxt.setOnClickListener {
-                        val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
+                        val toSave = pendingConvertedResult ?: baseResult
+                        val finalTitle = etBookTitle.text.toString().ifBlank { toSave.title }
                         val saved = localBookManager.saveBook(
                             title = finalTitle,
-                            author = result.author,
-                            originalFormat = result.originalFormat,
-                            content = result.content,
-                            chapterCount = result.chapterCount
+                            author = toSave.author,
+                            originalFormat = toSave.originalFormat,
+                            content = toSave.content,
+                            chapterCount = toSave.chapterCount
                         )
                         refreshLibrary()
                         pendingExportBook = saved
@@ -332,13 +359,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     }
 
                     btnReadNow.setOnClickListener {
-                        val finalTitle = etBookTitle.text.toString().ifBlank { result.title }
+                        val toSave = pendingConvertedResult ?: baseResult
+                        val finalTitle = etBookTitle.text.toString().ifBlank { toSave.title }
                         val saved = localBookManager.saveBook(
                             title = finalTitle,
-                            author = result.author,
-                            originalFormat = result.originalFormat,
-                            content = result.content,
-                            chapterCount = result.chapterCount
+                            author = toSave.author,
+                            originalFormat = toSave.originalFormat,
+                            content = toSave.content,
+                            chapterCount = toSave.chapterCount
                         )
                         refreshLibrary()
                         dialog.dismiss()

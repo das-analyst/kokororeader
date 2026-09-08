@@ -2,6 +2,8 @@ package com.kokoro.tts.reader.converter
 
 import android.content.Context
 import android.util.Log
+import com.kokoro.tts.engine.normalizer.ArtifactCleaner
+import com.kokoro.tts.engine.normalizer.TextNormalizer
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
@@ -27,7 +29,8 @@ object PdfToTextConverter {
     fun convert(
         context: Context,
         inputStream: InputStream,
-        fallbackTitle: String = "Converted PDF Document"
+        fallbackTitle: String = "Converted PDF Document",
+        normalizeSpeech: Boolean = false
     ): ConvertedBookResult {
         init(context)
 
@@ -62,7 +65,10 @@ object PdfToTextConverter {
                 stripper.endPage = endPage
 
                 val rawPageText = stripper.getText(document)
-                val cleanedText = cleanPdfText(rawPageText)
+                var cleanedText = cleanPdfText(rawPageText)
+                if (normalizeSpeech) {
+                    cleanedText = TextNormalizer.normalize(cleanedText)
+                }
 
                 if (cleanedText.isNotBlank()) {
                     textBuilder.append("CHAPTER ").append(chapterIndex)
@@ -96,7 +102,7 @@ object PdfToTextConverter {
      * Cleans common PDF text extraction artifacts:
      * - Fixes hyphenated line breaks: "infor-\nmation" -> "information"
      * - Removes single line page numbers: "\n 42 \n"
-     * - Normalizes irregular spaces
+     * - Normalizes irregular spaces and ligatures
      */
     private fun cleanPdfText(raw: String): String {
         var text = raw
@@ -116,6 +122,7 @@ object PdfToTextConverter {
 
         // Collapse excessive newlines
         val joined = cleanedLines.joinToString("\n")
-        return joined.replace(Regex("\\n{3,}"), "\n\n").trim()
+        val stripped = joined.replace(Regex("\\n{3,}"), "\n\n").trim()
+        return ArtifactCleaner.clean(stripped)
     }
 }

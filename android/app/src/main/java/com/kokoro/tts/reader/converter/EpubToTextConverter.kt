@@ -1,6 +1,8 @@
 package com.kokoro.tts.reader.converter
 
 import android.util.Log
+import com.kokoro.tts.engine.normalizer.ArtifactCleaner
+import com.kokoro.tts.engine.normalizer.TextNormalizer
 import org.jsoup.Jsoup
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
@@ -21,7 +23,11 @@ object EpubToTextConverter {
 
     private const val TAG = "EpubToTextConverter"
 
-    fun convert(inputStream: InputStream, fallbackTitle: String = "Converted Book"): ConvertedBookResult {
+    fun convert(
+        inputStream: InputStream,
+        fallbackTitle: String = "Converted Book",
+        normalizeSpeech: Boolean = false
+    ): ConvertedBookResult {
         val files = mutableMapOf<String, ByteArray>()
         val zis = ZipInputStream(inputStream)
         var entry: ZipEntry? = zis.nextEntry
@@ -79,15 +85,20 @@ object EpubToTextConverter {
                 }
             }
 
-            val cleanedText = chapterText.toString().trim()
-            if (cleanedText.length < 30) {
+            val rawText = chapterText.toString().trim()
+            if (rawText.length < 30) {
                 // Skip empty or tiny cover / copyright pages
                 continue
             }
 
+            var processedText = ArtifactCleaner.clean(rawText)
+            if (normalizeSpeech) {
+                processedText = TextNormalizer.normalize(processedText)
+            }
+
             chapterCount++
             textBuilder.append("CHAPTER ").append(chapterCount).append(": ").append(chapterTitle).append("\n\n")
-            textBuilder.append(cleanedText).append("\n\n")
+            textBuilder.append(processedText).append("\n\n")
         }
 
         if (chapterCount == 0) {
@@ -98,8 +109,12 @@ object EpubToTextConverter {
                     val body = doc.body()?.text()?.trim() ?: ""
                     if (body.length > 50) {
                         chapterCount++
+                        var processedBody = ArtifactCleaner.clean(body)
+                        if (normalizeSpeech) {
+                            processedBody = TextNormalizer.normalize(processedBody)
+                        }
                         textBuilder.append("CHAPTER ").append(chapterCount).append("\n\n")
-                        textBuilder.append(body).append("\n\n")
+                        textBuilder.append(processedBody).append("\n\n")
                     }
                 }
             }
