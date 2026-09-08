@@ -11,6 +11,7 @@ import com.kokoro.tts.engine.PhonemeConverter
 import com.kokoro.tts.engine.TextSplitter
 import com.kokoro.tts.engine.Tokenizer
 import com.kokoro.tts.engine.VoiceStyleLoader
+import android.speech.tts.Voice
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -70,6 +71,43 @@ class KokoroTtsService : TextToSpeechService() {
         return onIsLanguageAvailable(lang, country, variant)
     }
 
+    override fun onGetVoices(): MutableList<Voice> {
+        val voices = mutableListOf<Voice>()
+        for (name in voiceLoader.getAvailableVoices()) {
+            voices.add(
+                Voice(
+                    name,
+                    Locale.US,
+                    Voice.QUALITY_VERY_HIGH,
+                    Voice.LATENCY_NORMAL,
+                    false,
+                    emptySet()
+                )
+            )
+        }
+        return voices
+    }
+
+    override fun onIsValidVoiceName(voiceName: String?): Int {
+        return if (voiceName != null && voiceLoader.getAvailableVoices().contains(voiceName)) {
+            TextToSpeech.SUCCESS
+        } else {
+            TextToSpeech.ERROR
+        }
+    }
+
+    override fun onLoadVoice(voiceName: String?): Int {
+        if (voiceName != null && voiceLoader.getAvailableVoices().contains(voiceName)) {
+            currentVoice = voiceName
+            return TextToSpeech.SUCCESS
+        }
+        return TextToSpeech.ERROR
+    }
+
+    override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String {
+        return DEFAULT_VOICE
+    }
+
     override fun onStop() {
         Log.i(TAG, "Synthesis onStop received")
         isStopping.set(true)
@@ -84,6 +122,15 @@ class KokoroTtsService : TextToSpeechService() {
 
         // Speed calculation: Android default rate is 100 (normal = 1.0f)
         val speedRate = (request.speechRate / 100.0f).coerceIn(0.5f, 2.0f)
+
+        // Resolve requested voice
+        val requestedVoice = request.voiceName
+            ?: request.params?.getString("voiceName")
+        val voiceToUse = if (!requestedVoice.isNullOrBlank() && voiceLoader.getAvailableVoices().contains(requestedVoice)) {
+            requestedVoice
+        } else {
+            currentVoice
+        }
 
         // Split long passage into sentences for real-time streaming
         val sentences = TextSplitter.splitIntoSentences(text)
@@ -112,18 +159,19 @@ class KokoroTtsService : TextToSpeechService() {
                 if (tokens.size <= 2) continue
 
                 // 3. Extract matching 256-dim style vector for sentence length
-                val styleVector = voiceLoader.getStyleVector(currentVoice, tokens.size - 2)
+                val styleVector = voiceLoader.getStyleVector(voiceToUse, tokens.size - 2)
 
                 // 4. Run ONNX inference
                 val pcmAudio = kokoroEngine.synthesizeToPcm(tokens, styleVector, speedRate)
 
                 if (pcmAudio != null && pcmAudio.isNotEmpty()) {
-                    // Stream PCM audio chunk to audio track
-                    callback.audioAvailable(pcmAudio, 0, pcmAudio.size)
+                    // Stream PCM audio chunks to audio track
+                    val success = sendAudioInChunks(callback, pcmAudio)
+                    if (!success) break
 
                     // Insert natural pause after sentence if not the last sentence
                     if (index < sentences.size - 1) {
-                        callback.audioAvailable(pauseBytes, 0, pauseBytes.size)
+                        sendAudioInChunks(callback, pauseBytes)
                     }
                 }
             } catch (e: Exception) {
@@ -132,6 +180,25 @@ class KokoroTtsService : TextToSpeechService() {
         }
 
         callback.done()
+    }
+
+    /**
+     * Streams PCM byte buffer to SynthesisCallback in chunks no larger than callback.maxBufferSize.
+     * Android's PlaybackSynthesisCallback enforces this limit and throws IllegalArgumentException if exceeded.
+     */
+    private fun sendAudioInChunks(callback: SynthesisCallback, data: ByteArray): Boolean {
+        val maxBufferSize = if (callback.maxBufferSize > 0) callback.maxBufferSize else 8192
+        var offset = 0
+        while (offset < data.size && !isStopping.get()) {
+            val chunkSize = minOf(maxBufferSize, data.size - offset)
+            val result = callback.audioAvailable(data, offset, chunkSize)
+            if (result != TextToSpeech.SUCCESS) {
+                Log.w(TAG, "audioAvailable returned non-success code: $result (stopping synthesis)")
+                return false
+            }
+            offset += chunkSize
+        }
+        return true
     }
 
     override fun onDestroy() {

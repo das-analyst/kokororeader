@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import android.speech.tts.UtteranceProgressListener
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -44,12 +45,33 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         // Initialize TTS bound specifically to our own Kokoro engine package
         tts = TextToSpeech(this, this, packageName)
+        setupUtteranceListener()
 
         btnTestVoice.setOnClickListener {
+            if (tts?.isSpeaking == true) {
+                tts?.stop()
+                btnTestVoice.text = getString(R.string.btn_test)
+                statusText.text = "Playback stopped"
+                return@setOnClickListener
+            }
+
             val text = sampleTextInput.text.toString().trim()
             if (text.isNotEmpty()) {
+                val selectedVoice = voiceSpinner.selectedItem?.toString() ?: KokoroTtsService.DEFAULT_VOICE
                 statusText.text = "Synthesizing voice sample..."
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "sample_utterance")
+                btnTestVoice.text = "Stop"
+
+                val params = Bundle().apply {
+                    putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "sample_utterance")
+                    putString("voiceName", selectedVoice)
+                }
+
+                // Set voice directly on TTS instance if available
+                tts?.voices?.find { it.name == selectedVoice }?.let { voice ->
+                    tts?.voice = voice
+                }
+
+                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, "sample_utterance")
             }
         }
 
@@ -66,10 +88,43 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun setupVoiceSpinner() {
         val voices = voiceLoader.getAvailableVoices()
-        val voiceList = if (voices.isEmpty()) listOf("af_heart (default)") else voices
+        val voiceList = if (voices.isEmpty()) listOf(KokoroTtsService.DEFAULT_VOICE) else voices
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voiceList)
         voiceSpinner.adapter = adapter
+    }
+
+    private fun setupUtteranceListener() {
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                runOnUiThread {
+                    statusText.text = "Speaking..."
+                    btnTestVoice.text = "Stop"
+                }
+            }
+
+            override fun onDone(utteranceId: String?) {
+                runOnUiThread {
+                    statusText.text = "Kokoro TTS engine ready"
+                    btnTestVoice.text = getString(R.string.btn_test)
+                }
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                runOnUiThread {
+                    statusText.text = "Error during synthesis"
+                    btnTestVoice.text = getString(R.string.btn_test)
+                }
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                runOnUiThread {
+                    statusText.text = "Synthesis error (code: $errorCode)"
+                    btnTestVoice.text = getString(R.string.btn_test)
+                }
+            }
+        })
     }
 
     override fun onInit(status: Int) {
