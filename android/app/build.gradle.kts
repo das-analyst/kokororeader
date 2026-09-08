@@ -62,4 +62,10 @@ dependencies {
 
     // ONNX Runtime Android (1.29.0+ supports 16 KB page size alignment)
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
+
+    // Lightweight EPUB HTML/XHTML Parser
+    implementation("org.jsoup:jsoup:1.18.1")
+
+    // UI Components for Ebook Reader
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 }

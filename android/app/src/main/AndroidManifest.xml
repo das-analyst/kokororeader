@@ -36,6 +36,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Dedicated Ebook Reader Activity -->
+        <activity
+            android:name=".reader.ui.ReaderActivity"
+            android:exported="false"
+            android:label="Kokoro Ebook Reader"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+
     </application>
 
 </manifest>

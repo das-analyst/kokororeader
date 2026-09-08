@@ -28,6 +28,16 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var btnTestVoice: Button
     private lateinit var btnOpenSettings: Button
     private lateinit var statusText: TextView
+    private lateinit var btnReadSample: Button
+    private lateinit var btnOpenEbook: Button
+
+    private val openDocumentLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            loadEbookFromUri(uri)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,11 +45,25 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         voiceLoader = VoiceStyleLoader(applicationContext)
 
+        btnReadSample = findViewById(R.id.btnReadSample)
+        btnOpenEbook = findViewById(R.id.btnOpenEbook)
         voiceSpinner = findViewById(R.id.voiceSpinner)
         sampleTextInput = findViewById(R.id.sampleTextInput)
         btnTestVoice = findViewById(R.id.btnTestVoice)
         btnOpenSettings = findViewById(R.id.btnOpenSettings)
         statusText = findViewById(R.id.statusText)
+
+        btnReadSample.setOnClickListener {
+            com.kokoro.tts.reader.ui.ReaderActivity.start(this, com.kokoro.tts.reader.model.SampleBook.SAMPLE_BOOK)
+        }
+
+        btnOpenEbook.setOnClickListener {
+            openDocumentLauncher.launch(arrayOf(
+                "application/epub+zip",
+                "text/plain",
+                "*/*"
+            ))
+        }
 
         setupVoiceSpinner()
 
@@ -138,6 +162,46 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         } else {
             statusText.text = "Failed to connect to Kokoro TTS service"
         }
+    }
+
+    private fun loadEbookFromUri(uri: android.net.Uri) {
+        statusText.text = "Loading and parsing ebook..."
+        Thread {
+            try {
+                val contentResolver = applicationContext.contentResolver
+                val inputStream = contentResolver.openInputStream(uri)
+                if (inputStream == null) {
+                    runOnUiThread { statusText.text = "Failed to open file stream" }
+                    return@Thread
+                }
+
+                var displayName = "Opened Book"
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex >= 0) {
+                            displayName = cursor.getString(nameIndex) ?: displayName
+                        }
+                    }
+                }
+
+                val book = if (displayName.endsWith(".epub", ignoreCase = true)) {
+                    com.kokoro.tts.reader.parser.EpubParser.parse(inputStream, displayName)
+                } else {
+                    com.kokoro.tts.reader.parser.TxtParser.parse(inputStream, displayName)
+                }
+
+                runOnUiThread {
+                    statusText.text = "Kokoro TTS engine ready"
+                    com.kokoro.tts.reader.ui.ReaderActivity.start(this, book)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error opening ebook from URI: $uri", e)
+                runOnUiThread {
+                    statusText.text = "Failed to parse book: ${e.message}"
+                }
+            }
+        }.start()
     }
 
     override fun onDestroy() {
