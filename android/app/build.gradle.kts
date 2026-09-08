@@ -5,6 +5,7 @@ plugins {
 android {
     namespace = "com.kokoro.tts"
     compileSdk = 35
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.kokoro.tts"
@@ -19,7 +20,10 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments += "-DANDROID_STL=c++_shared"
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+                )
             }
         }
     }
@@ -56,6 +60,6 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // ONNX Runtime Android
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // ONNX Runtime Android (1.29.0+ supports 16 KB page size alignment)
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.29.0")
 }

@@ -3,6 +3,9 @@ project(espeak_jni LANGUAGES C CXX)
 
 set(CMAKE_SKIP_RPATH TRUE)
 
+# Enforce 16 KB ELF page alignment for Android 15+ compatibility
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384")
+
 include(FetchContent)
 
 # Fetch espeak-ng (cmake fork widely used by sherpa-onnx)
