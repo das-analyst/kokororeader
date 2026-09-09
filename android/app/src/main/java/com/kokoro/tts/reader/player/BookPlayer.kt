@@ -112,6 +112,26 @@ class BookPlayer(
         currentSentenceIndex.set(startIndex)
         targetSentenceIndex.set(startIndex)
         clearQueue()
+        preWarmSentence(startIndex)
+    }
+
+    /**
+     * Pre-synthesizes a sentence in the background into the audio cache.
+     * Called when a book or chapter loads so Sentence 0 is immediately ready for instant playback.
+     */
+    fun preWarmSentence(index: Int = 0) {
+        if (index < 0 || index >= sentences.size) return
+        Thread({
+            val sentence = sentences.getOrNull(index) ?: return@Thread
+            val cacheKey = "$currentVoice:$currentSpeed:${sentence.text}"
+            if (audioCache.get(cacheKey) == null) {
+                val pcm = synthesize(sentence.text)
+                if (pcm != null && pcm.isNotEmpty()) {
+                    audioCache.put(cacheKey, pcm)
+                    Log.i(TAG, "Pre-warmed sentence $index into cache (${pcm.size} bytes)")
+                }
+            }
+        }, "BookPlayer-PreWarmer").start()
     }
 
     fun play() {
@@ -121,6 +141,12 @@ class BookPlayer(
         isPlaying.set(true)
         isStopped.set(false)
         listener?.onPlaybackStateChanged(true)
+
+        val startSentence = sentences.getOrNull(targetSentenceIndex.get())
+        val isCached = startSentence != null && audioCache.get("$currentVoice:$currentSpeed:${startSentence.text}") != null
+        if (!isCached) {
+            listener?.onBuffering(true)
+        }
 
         if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
             setupAudioTrack()
@@ -136,6 +162,7 @@ class BookPlayer(
         audioTrack?.pause()
         audioTrack?.flush()
         clearQueue()
+        listener?.onBuffering(false)
         listener?.onPlaybackStateChanged(false)
     }
 
@@ -148,6 +175,12 @@ class BookPlayer(
         generationId.incrementAndGet()
         clearQueue()
 
+        val targetSentence = sentences.getOrNull(clamped)
+        val isCached = targetSentence != null && audioCache.get("$currentVoice:$currentSpeed:${targetSentence.text}") != null
+        if (isPlaying.get() && !isCached) {
+            listener?.onBuffering(true)
+        }
+
         audioTrack?.pause()
         audioTrack?.flush()
         if (isPlaying.get()) {
@@ -155,6 +188,7 @@ class BookPlayer(
         }
 
         listener?.onSentenceStarted(clamped)
+        preWarmSentence(clamped + 1)
     }
 
     fun nextSentence() {
@@ -244,6 +278,7 @@ class BookPlayer(
                 }
 
                 currentSentenceIndex.set(chunk.sentenceIndex)
+                listener?.onBuffering(false)
                 listener?.onSentenceStarted(chunk.sentenceIndex)
 
                 // Stream PCM bytes to AudioTrack in chunks

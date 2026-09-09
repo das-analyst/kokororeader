@@ -147,6 +147,13 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         phonemeConverter = PhonemeConverter(this, tokenizer)
         kokoroEngine = KokoroEngine(this, "model_quantized.onnx")
 
+        // Pre-warm ONNX Runtime neural engine asynchronously in background so first sentence starts instantly
+        Thread({
+            Log.i(TAG, "Pre-warming KokoroEngine in background...")
+            kokoroEngine.initialize()
+            Log.i(TAG, "KokoroEngine pre-warmed successfully!")
+        }, "Reader-EnginePreWarmer").start()
+
         updateVoiceSpeedLabel()
     }
 
@@ -304,7 +311,9 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
     override fun onBuffering(isBuffering: Boolean) {
         runOnUiThread {
             if (isBuffering) {
-                tvProgress.text = "Buffering audio..."
+                tvProgress.text = "⚡ Buffering speech..."
+            } else {
+                updateProgress(player?.getCurrentIndex() ?: 0)
             }
         }
     }

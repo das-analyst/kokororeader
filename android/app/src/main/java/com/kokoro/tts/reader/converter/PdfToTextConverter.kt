@@ -48,7 +48,43 @@ object PdfToTextConverter {
             textBuilder.append("# ").append(bookTitle).append("\n")
             textBuilder.append("Author: ").append(bookAuthor).append("\n\n")
 
-            // Determine chapter grouping: for large PDFs group ~10-15 pages per chapter
+            // Extract complete document text to detect semantic chapters across pages
+            val fullRawText = stripper.getText(document)
+            val cleanedFullText = cleanPdfText(fullRawText)
+            val detection = ChapterDetector.detect(cleanedFullText)
+
+            if (detection.chapters.isNotEmpty()) {
+                Log.i(TAG, "Detected ${detection.chapters.size} semantic chapters in PDF")
+                if (detection.frontMatter.isNotBlank()) {
+                    var processedFm = detection.frontMatter
+                    if (normalizeSpeech) {
+                        processedFm = TextNormalizer.normalize(processedFm)
+                    }
+                    textBuilder.append(processedFm).append("\n\n")
+                }
+
+                var chapterCount = 0
+                for (ch in detection.chapters) {
+                    chapterCount++
+                    var processedContent = ch.content
+                    if (normalizeSpeech) {
+                        processedContent = TextNormalizer.normalize(processedContent)
+                    }
+                    textBuilder.append("CHAPTER ").append(chapterCount).append(": ").append(ch.title).append("\n\n")
+                    textBuilder.append(processedContent).append("\n\n")
+                }
+
+                return ConvertedBookResult(
+                    title = bookTitle,
+                    author = bookAuthor,
+                    content = textBuilder.toString().trim(),
+                    chapterCount = maxOf(1, chapterCount),
+                    originalFormat = "PDF"
+                )
+            }
+
+            Log.i(TAG, "No semantic chapters detected, using page-chunk fallback")
+            // Fallback: For PDFs without explicit chapter markers, group pages
             val pagesPerChapter = when {
                 numberOfPages <= 15 -> numberOfPages
                 numberOfPages <= 50 -> 10

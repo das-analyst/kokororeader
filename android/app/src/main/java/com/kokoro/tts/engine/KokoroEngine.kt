@@ -28,6 +28,8 @@ class KokoroEngine(
     private var session: OrtSession? = null
     private var tokensInputName: String = "tokens"
 
+    fun isInitialized(): Boolean = session != null
+
     @Synchronized
     fun initialize(): Boolean {
         if (session != null) return true

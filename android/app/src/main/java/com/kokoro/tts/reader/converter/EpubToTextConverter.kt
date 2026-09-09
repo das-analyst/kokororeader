@@ -56,67 +56,95 @@ object EpubToTextConverter {
         textBuilder.append("# ").append(bookTitle).append("\n")
         textBuilder.append("Author: ").append(bookAuthor).append("\n\n")
 
-        var chapterCount = 0
+        val fullBookText = StringBuilder()
+        val spineFallbackChapters = mutableListOf<Pair<String, String>>()
 
         for (itemHref in metadata.spineHrefs) {
             val chapterBytes = files[itemHref] ?: files[itemHref.removePrefix("/")]
             if (chapterBytes == null) continue
 
             val html = String(chapterBytes, Charsets.UTF_8)
-            val doc = Jsoup.parse(html)
+            // Separate bold numbered headings embedded in paragraphs into their own block
+            val preprocessedHtml = html.replace(Regex("(?i)(<b[^>]*>\\s*\\d{1,3}(?:\\s*<[^>]+>)*\\s*[A-Z])"), "</p><p>$1")
+            val doc = Jsoup.parse(preprocessedHtml)
 
             val chapterTitle = doc.select("h1, h2, title").firstOrNull()?.text()?.trim()
-                ?: "Chapter ${chapterCount + 1}"
+                ?: "Chapter ${spineFallbackChapters.size + 1}"
 
             val bodyElements = doc.select("h1, h2, h3, h4, p, li, blockquote")
-            val chapterText = StringBuilder()
+            val sectionText = StringBuilder()
 
             if (bodyElements.isNotEmpty()) {
                 for (el in bodyElements) {
                     val paragraphText = el.text().trim()
                     if (paragraphText.isNotBlank()) {
-                        chapterText.append(paragraphText).append("\n\n")
+                        sectionText.append(paragraphText).append("\n\n")
+                        fullBookText.append(paragraphText).append("\n\n")
                     }
                 }
             } else {
                 val fullBody = doc.body()?.text()?.trim() ?: ""
                 if (fullBody.isNotBlank()) {
-                    chapterText.append(fullBody).append("\n\n")
+                    sectionText.append(fullBody).append("\n\n")
+                    fullBookText.append(fullBody).append("\n\n")
                 }
             }
 
-            val rawText = chapterText.toString().trim()
-            if (rawText.length < 30) {
-                // Skip empty or tiny cover / copyright pages
-                continue
+            val rawSec = sectionText.toString().trim()
+            if (rawSec.length >= 30) {
+                spineFallbackChapters.add(Pair(chapterTitle, rawSec))
             }
-
-            var processedText = ArtifactCleaner.clean(rawText)
-            if (normalizeSpeech) {
-                processedText = TextNormalizer.normalize(processedText)
-            }
-
-            chapterCount++
-            textBuilder.append("CHAPTER ").append(chapterCount).append(": ").append(chapterTitle).append("\n\n")
-            textBuilder.append(processedText).append("\n\n")
         }
 
-        if (chapterCount == 0) {
+        if (fullBookText.isBlank()) {
             // Fallback: extract anything readable from all HTML files
             for ((name, data) in files) {
                 if (name.endsWith(".html") || name.endsWith(".xhtml") || name.endsWith(".htm")) {
-                    val doc = Jsoup.parse(String(data, Charsets.UTF_8))
+                    val html = String(data, Charsets.UTF_8)
+                    val preprocessedHtml = html.replace(Regex("(?i)(<b[^>]*>\\s*\\d{1,3}(?:\\s*<[^>]+>)*\\s*[A-Z])"), "</p><p>$1")
+                    val doc = Jsoup.parse(preprocessedHtml)
                     val body = doc.body()?.text()?.trim() ?: ""
                     if (body.length > 50) {
-                        chapterCount++
-                        var processedBody = ArtifactCleaner.clean(body)
-                        if (normalizeSpeech) {
-                            processedBody = TextNormalizer.normalize(processedBody)
-                        }
-                        textBuilder.append("CHAPTER ").append(chapterCount).append("\n\n")
-                        textBuilder.append(processedBody).append("\n\n")
+                        fullBookText.append(body).append("\n\n")
+                        spineFallbackChapters.add(Pair("Chapter ${spineFallbackChapters.size + 1}", body))
                     }
                 }
+            }
+        }
+
+        val rawFullText = fullBookText.toString().trim()
+        val detection = ChapterDetector.detect(rawFullText)
+        var chapterCount = 0
+
+        if (detection.chapters.isNotEmpty()) {
+            Log.i(TAG, "Detected ${detection.chapters.size} semantic chapters in EPUB")
+            if (detection.frontMatter.isNotBlank()) {
+                var processedFm = ArtifactCleaner.clean(detection.frontMatter)
+                if (normalizeSpeech) {
+                    processedFm = TextNormalizer.normalize(processedFm)
+                }
+                textBuilder.append(processedFm).append("\n\n")
+            }
+
+            for (ch in detection.chapters) {
+                chapterCount++
+                var processedContent = ArtifactCleaner.clean(ch.content)
+                if (normalizeSpeech) {
+                    processedContent = TextNormalizer.normalize(processedContent)
+                }
+                textBuilder.append("CHAPTER ").append(chapterCount).append(": ").append(ch.title).append("\n\n")
+                textBuilder.append(processedContent).append("\n\n")
+            }
+        } else {
+            Log.i(TAG, "No semantic chapters detected, using ${spineFallbackChapters.size} spine items as chapters")
+            for ((title, content) in spineFallbackChapters) {
+                chapterCount++
+                var processedText = ArtifactCleaner.clean(content)
+                if (normalizeSpeech) {
+                    processedText = TextNormalizer.normalize(processedText)
+                }
+                textBuilder.append("CHAPTER ").append(chapterCount).append(": ").append(title).append("\n\n")
+                textBuilder.append(processedText).append("\n\n")
             }
         }
 
