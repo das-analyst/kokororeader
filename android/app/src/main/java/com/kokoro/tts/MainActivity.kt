@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                         Thread {
                             val activeContent = if (isChecked) {
-                                TextNormalizer.normalize(baseResult.content)
+                                TextNormalizer.normalizeBookContent(baseResult.content)
                             } else {
                                 baseResult.content
                             }
