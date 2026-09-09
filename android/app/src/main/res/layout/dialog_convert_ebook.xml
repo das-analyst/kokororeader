@@ -98,6 +98,16 @@
             android:textColor="#333333"
             android:checked="false" />
 
+        <ProgressBar
+            android:id="@+id/pbNormalizing"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:indeterminate="true"
+            android:visibility="gone"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp" />
+
         <!-- Action Buttons Directly In Layout -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSaveToLibrary"

@@ -249,6 +249,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val tvConversionStats = dialogView.findViewById<TextView>(R.id.tvConversionStats)
         val tvTextPreview = dialogView.findViewById<TextView>(R.id.tvTextPreview)
         val cbNormalizeSpeech = dialogView.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.cbNormalizeSpeech)
+        val pbNormalizing = dialogView.findViewById<ProgressBar>(R.id.pbNormalizing)
         val btnSaveToLibrary = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSaveToLibrary)
         val btnExportTxt = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnExportTxt)
         val btnReadNow = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadNow)
@@ -303,16 +304,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
                     etBookTitle.setText(baseResult.title)
 
-                    fun updateStatsAndPreview(content: String) {
+                    fun updateStatsAndPreview(content: String, isNormalized: Boolean = false) {
                         val wordCount = content.split(Regex("\\s+")).size
                         val sizeKb = content.toByteArray().size / 1024
-                        tvConversionStats.text = "✔ Extracted ${baseResult.chapterCount} Chapters • ~$wordCount words • $sizeKb KB"
+                        val badge = if (isNormalized) " • 🗣️ Normalized for speech" else ""
+                        tvConversionStats.text = "✔ Extracted ${baseResult.chapterCount} Chapters • ~$wordCount words • $sizeKb KB$badge"
                         tvTextPreview.text = content.take(1500) + if (content.length > 1500) "\n\n[... Remaining content preserved ...]" else ""
                     }
 
-                    updateStatsAndPreview(baseResult.content)
+                    updateStatsAndPreview(baseResult.content, false)
 
                     cbNormalizeSpeech.setOnCheckedChangeListener { _, isChecked ->
+                        pbNormalizing.visibility = View.VISIBLE
+                        tvConversionStats.text = "⏳ Normalizing numbers, dates & abbreviations for speech..."
+                        btnSaveToLibrary.isEnabled = false
+                        btnExportTxt.isEnabled = false
+                        btnReadNow.isEnabled = false
+
                         Thread {
                             val activeContent = if (isChecked) {
                                 TextNormalizer.normalize(baseResult.content)
@@ -322,7 +330,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             currentDisplayedResult = baseResult.copy(content = activeContent)
                             pendingConvertedResult = currentDisplayedResult
                             runOnUiThread {
-                                updateStatsAndPreview(activeContent)
+                                pbNormalizing.visibility = View.GONE
+                                btnSaveToLibrary.isEnabled = true
+                                btnExportTxt.isEnabled = true
+                                btnReadNow.isEnabled = true
+                                updateStatsAndPreview(activeContent, isChecked)
                             }
                         }.start()
                     }
