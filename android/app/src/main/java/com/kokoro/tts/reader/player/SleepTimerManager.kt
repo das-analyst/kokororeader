@@ -69,13 +69,15 @@ class SleepTimerManager(
         }
     }
 
-    fun onChapterFinished() {
+    fun onChapterFinished(): Boolean {
         if (currentMode == SleepTimerMode.END_OF_CHAPTER) {
             currentMode = SleepTimerMode.OFF
             remainingMs = 0L
             listener.onModeChanged(SleepTimerMode.OFF)
             listener.onTimerExpired()
+            return true
         }
+        return false
     }
 
     fun stopTimer() {

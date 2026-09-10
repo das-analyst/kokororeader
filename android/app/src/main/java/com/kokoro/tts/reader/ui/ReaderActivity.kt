@@ -187,13 +187,41 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             }
         }
 
-        btnPrev.setOnClickListener { player?.previousSentence() }
-        btnNext.setOnClickListener { player?.nextSentence() }
+        btnPrev.setOnClickListener { handlePreviousSentence() }
+        btnNext.setOnClickListener { handleNextSentence() }
         btnBack.setOnClickListener { finish() }
         btnSleepTimer.setOnClickListener { showSleepTimerDialog() }
         btnAppearance.setOnClickListener { showAppearanceDialog() }
         btnToc.setOnClickListener { showTableOfContents() }
         btnSettings.setOnClickListener { showVoiceSpeedDialog() }
+    }
+
+    private fun handleNextSentence() {
+        val p = player ?: return
+        val curr = p.getCurrentIndex()
+        val total = if (::book.isInitialized && currentChapterIndex in book.chapters.indices) {
+            book.chapters[currentChapterIndex].sentences.size
+        } else 0
+
+        if (curr + 1 < total) {
+            p.seekToSentence(curr + 1)
+        } else if (::book.isInitialized && currentChapterIndex + 1 < book.chapters.size) {
+            val isPlaying = p.isCurrentlyPlaying()
+            loadChapter(currentChapterIndex + 1, startSentenceIndex = 0, autoPlay = isPlaying)
+        }
+    }
+
+    private fun handlePreviousSentence() {
+        val p = player ?: return
+        val curr = p.getCurrentIndex()
+        if (curr > 0) {
+            p.seekToSentence(curr - 1)
+        } else if (::book.isInitialized && currentChapterIndex > 0) {
+            val isPlaying = p.isCurrentlyPlaying()
+            val prevChapter = currentChapterIndex - 1
+            val lastSentence = (book.chapters[prevChapter].sentences.size - 1).coerceAtLeast(0)
+            loadChapter(prevChapter, startSentenceIndex = lastSentence, autoPlay = isPlaying)
+        }
     }
 
     private fun initSleepTimer() {
@@ -242,11 +270,11 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             }
 
             override fun nextSentence() {
-                runOnUiThread { player?.nextSentence() }
+                runOnUiThread { handleNextSentence() }
             }
 
             override fun previousSentence() {
-                runOnUiThread { player?.previousSentence() }
+                runOnUiThread { handlePreviousSentence() }
             }
 
             override fun isPlaying(): Boolean = player?.isCurrentlyPlaying() ?: false
@@ -362,10 +390,13 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             listener = this
         )
 
-        loadChapter(0)
+        val saved = bookId?.let { id -> localBookManager.getAllSavedBooks().find { it.id == id } }
+        val startChapter = (saved?.lastReadChapter ?: 0).coerceIn(0, maxOf(0, readyBook.chapters.size - 1))
+        val startSentence = (saved?.lastReadSentence ?: 0).coerceIn(0, maxOf(0, (readyBook.chapters.getOrNull(startChapter)?.sentences?.size ?: 1) - 1))
+        loadChapter(startChapter, startSentenceIndex = startSentence, autoPlay = false)
     }
 
-    private fun loadChapter(chapterIndex: Int) {
+    private fun loadChapter(chapterIndex: Int, startSentenceIndex: Int = 0, autoPlay: Boolean = false) {
         if (!::book.isInitialized || chapterIndex !in book.chapters.indices) return
         currentChapterIndex = chapterIndex
         val chapter = book.chapters[chapterIndex]
@@ -373,14 +404,23 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         tvChapterTitle.text = chapter.title
         sentenceAdapter.updateSentences(chapter.sentences)
 
-        player?.setSentences(chapter.sentences)
-        updateProgress(0)
+        val safeSentenceIndex = startSentenceIndex.coerceIn(0, maxOf(0, chapter.sentences.size - 1))
+        player?.setSentences(chapter.sentences, startIndex = safeSentenceIndex)
+        sentenceAdapter.setActiveIndex(safeSentenceIndex)
+        updateProgress(safeSentenceIndex)
+        rvSentences.post {
+            layoutManager.scrollToPositionWithOffset(safeSentenceIndex, 120)
+        }
 
         // Record reading position
         bookId?.let { id ->
-            localBookManager.updateReadingPosition(id, chapterIndex, 0)
+            localBookManager.updateReadingPosition(id, chapterIndex, safeSentenceIndex)
         }
         updatePlaybackService()
+
+        if (autoPlay) {
+            player?.play()
+        }
     }
 
     private fun updateProgress(sentenceIndex: Int) {
@@ -426,9 +466,9 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             .setTitle("Table of Contents")
             .setItems(chapterTitles) { _, which ->
                 if (which != currentChapterIndex) {
+                    val isPlaying = player?.isCurrentlyPlaying() ?: false
                     player?.pause()
-                    loadChapter(which)
-                    player?.play()
+                    loadChapter(which, startSentenceIndex = 0, autoPlay = isPlaying)
                 }
             }
             .setNegativeButton("Close", null)
@@ -682,7 +722,24 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
 
     override fun onChapterFinished(lastIndex: Int) {
         runOnUiThread {
-            sleepTimerManager.onChapterFinished()
+            val timerStoppedPlayback = sleepTimerManager.onChapterFinished()
+            if (timerStoppedPlayback) {
+                player?.pause()
+                return@runOnUiThread
+            }
+
+            if (::book.isInitialized && currentChapterIndex + 1 < book.chapters.size) {
+                val nextChapter = currentChapterIndex + 1
+                Toast.makeText(
+                    this@ReaderActivity,
+                    "Starting Chapter ${nextChapter + 1}: ${book.chapters[nextChapter].title}",
+                    Toast.LENGTH_SHORT
+                ).show()
+                loadChapter(nextChapter, startSentenceIndex = 0, autoPlay = true)
+            } else {
+                Toast.makeText(this@ReaderActivity, "Finished book!", Toast.LENGTH_SHORT).show()
+                updatePlaybackService()
+            }
         }
     }
 

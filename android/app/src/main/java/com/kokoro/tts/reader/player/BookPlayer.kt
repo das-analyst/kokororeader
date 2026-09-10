@@ -153,11 +153,14 @@ class BookPlayer(
         if (sentences.isEmpty()) return
         if (isPlaying.get()) return
 
+        val resumeIndex = currentSentenceIndex.get().coerceIn(0, sentences.size - 1)
+        targetSentenceIndex.set(resumeIndex)
+
         isPlaying.set(true)
         isStopped.set(false)
         listener?.onPlaybackStateChanged(true)
 
-        val startSentence = sentences.getOrNull(targetSentenceIndex.get())
+        val startSentence = sentences.getOrNull(resumeIndex)
         val isCached = startSentence != null && audioCache.get(getCacheKey(startSentence)) != null
         if (!isCached) {
             listener?.onBuffering(true)
@@ -174,6 +177,7 @@ class BookPlayer(
     fun pause() {
         if (!isPlaying.get()) return
         isPlaying.set(false)
+        targetSentenceIndex.set(currentSentenceIndex.get())
         audioTrack?.pause()
         audioTrack?.flush()
         clearQueue()
@@ -187,7 +191,7 @@ class BookPlayer(
         currentSentenceIndex.set(clamped)
 
         // Increment generation ID to invalidate any queued audio from previous position
-        generationId.incrementAndGet()
+        val newGenId = generationId.incrementAndGet()
         clearQueue()
 
         val targetSentence = sentences.getOrNull(clamped)
@@ -200,6 +204,11 @@ class BookPlayer(
         audioTrack?.flush()
         if (isPlaying.get()) {
             audioTrack?.play()
+            // If producer or playback thread died, restart immediately
+            if (producerThread == null || !producerThread!!.isAlive ||
+                playbackThread == null || !playbackThread!!.isAlive) {
+                startThreads()
+            }
         }
 
         listener?.onSentenceStarted(clamped)
@@ -232,17 +241,25 @@ class BookPlayer(
         // 1. Synthesizer Thread (Producer) - runs ahead and fills queue
         producerThread = Thread({
             var synthIndex = targetSentenceIndex.get()
-            val myGenId = generationId.get()
+            var myGenId = generationId.get()
 
             while (isPlaying.get() && !isStopped.get()) {
-                // If user jumped to a different sentence, reset synthesis cursor
-                if (generationId.get() != myGenId) {
-                    break
+                val currentGen = generationId.get()
+                if (currentGen != myGenId) {
+                    // User jumped to a different sentence: update cursor and continue without dying
+                    myGenId = currentGen
+                    synthIndex = targetSentenceIndex.get()
+                    continue
                 }
 
                 if (synthIndex >= sentences.size) {
-                    // Reached end of chapter
-                    break
+                    // Reached end of chapter for synthesis: wait for seek or chapter end
+                    try {
+                        Thread.sleep(100)
+                    } catch (e: InterruptedException) {
+                        break
+                    }
+                    continue
                 }
 
                 val sentence = sentences[synthIndex]
@@ -261,6 +278,11 @@ class BookPlayer(
                         audioCache.put(cacheKey, sa)
                         sa
                     } else null
+                }
+
+                // Check if generation changed while synthesis was running
+                if (generationId.get() != myGenId) {
+                    continue
                 }
 
                 if (sentenceAudio != null) {
@@ -284,8 +306,9 @@ class BookPlayer(
             var activeGenId = generationId.get()
 
             while (isPlaying.get() && !isStopped.get()) {
-                if (generationId.get() != activeGenId) {
-                    activeGenId = generationId.get()
+                val currentGen = generationId.get()
+                if (currentGen != activeGenId) {
+                    activeGenId = currentGen
                     continue
                 }
 
@@ -305,6 +328,7 @@ class BookPlayer(
                 }
 
                 currentSentenceIndex.set(chunk.sentenceIndex)
+                targetSentenceIndex.set(chunk.sentenceIndex)
                 listener?.onBuffering(false)
                 listener?.onSentenceStarted(chunk.sentenceIndex)
                 Log.i(TAG, "Playing sentence ${chunk.sentenceIndex}: ${chunk.pcm.size}B speech + ${chunk.silencePcm.size}B silence (${chunk.silencePcm.size / 48}ms)")

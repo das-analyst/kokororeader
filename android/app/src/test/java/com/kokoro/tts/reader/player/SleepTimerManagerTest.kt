@@ -1,4 +1,4 @@
-﻿package com.kokoro.tts.reader.player
+package com.kokoro.tts.reader.player
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,6 +43,26 @@ class SleepTimerManagerTest {
 
         manager.stopTimer()
         assertFalse(manager.isRunning())
+        assertEquals(SleepTimerManager.SleepTimerMode.OFF, manager.getMode())
+    }
+
+    @Test
+    fun testOnChapterFinished() {
+        var expired = false
+        val manager = SleepTimerManager(object : SleepTimerManager.Listener {
+            override fun onTick(remainingMs: Long, formattedTime: String) {}
+            override fun onTimerExpired() { expired = true }
+            override fun onModeChanged(mode: SleepTimerManager.SleepTimerMode) {}
+        })
+
+        // When OFF, onChapterFinished returns false
+        assertFalse(manager.onChapterFinished())
+        assertFalse(expired)
+
+        // When END_OF_CHAPTER, onChapterFinished returns true and fires onTimerExpired
+        manager.startTimer(SleepTimerManager.SleepTimerMode.END_OF_CHAPTER)
+        assertTrue(manager.onChapterFinished())
+        assertTrue(expired)
         assertEquals(SleepTimerManager.SleepTimerMode.OFF, manager.getMode())
     }
 }
