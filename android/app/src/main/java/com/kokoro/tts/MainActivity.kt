@@ -21,9 +21,11 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.kokoro.tts.engine.VoiceStyleLoader
 import com.kokoro.tts.engine.normalizer.ArtifactCleaner
 import com.kokoro.tts.engine.normalizer.TextNormalizer
+import com.kokoro.tts.reader.converter.ChapterDetector
 import com.kokoro.tts.reader.converter.ConvertedBookResult
 import com.kokoro.tts.reader.converter.EpubToTextConverter
 import com.kokoro.tts.reader.converter.PdfToTextConverter
@@ -245,11 +247,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         val layoutConverting = dialogView.findViewById<View>(R.id.layoutConverting)
         val tvConvertingStatus = dialogView.findViewById<TextView>(R.id.tvConvertingStatus)
         val layoutPreview = dialogView.findViewById<View>(R.id.layoutPreview)
+        val tvFormatBadge = dialogView.findViewById<TextView>(R.id.tvFormatBadge)
         val etBookTitle = dialogView.findViewById<EditText>(R.id.etBookTitle)
         val tvConversionStats = dialogView.findViewById<TextView>(R.id.tvConversionStats)
         val tvTextPreview = dialogView.findViewById<TextView>(R.id.tvTextPreview)
         val cbNormalizeSpeech = dialogView.findViewById<com.google.android.material.checkbox.MaterialCheckBox>(R.id.cbNormalizeSpeech)
         val pbNormalizing = dialogView.findViewById<ProgressBar>(R.id.pbNormalizing)
+        val tvDestinationInfo = dialogView.findViewById<TextView>(R.id.tvDestinationInfo)
         val btnSaveToLibrary = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSaveToLibrary)
         val btnExportTxt = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnExportTxt)
         val btnReadNow = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnReadNow)
@@ -257,8 +261,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         tvConvertingStatus.text = "Converting '$displayName' to readable text..."
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Convert Ebook")
+        val dialog = MaterialAlertDialogBuilder(this)
             .setView(dialogView)
             .setCancelable(true)
             .create()
@@ -285,11 +288,24 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         // Plain text
                         val rawText = inputStream.bufferedReader().use { it.readText() }
                         val text = ArtifactCleaner.clean(rawText)
+                        val detected = ChapterDetector.detect(text)
+
+                        var title = displayName.substringBeforeLast(".")
+                        var author = "Unknown Author"
+                        for (line in text.lineSequence().take(15)) {
+                            val trimmed = line.trim()
+                            if (trimmed.startsWith("# ")) {
+                                title = trimmed.removePrefix("# ").trim()
+                            } else if (trimmed.startsWith("Author:", ignoreCase = true)) {
+                                author = trimmed.substringAfter(":").trim()
+                            }
+                        }
+
                         ConvertedBookResult(
-                            title = displayName.substringBeforeLast("."),
-                            author = "Unknown Author",
+                            title = title,
+                            author = author,
                             content = text,
-                            chapterCount = 1,
+                            chapterCount = detected.chapters.size.coerceAtLeast(1),
                             originalFormat = "TXT"
                         )
                     }
@@ -302,14 +318,19 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     layoutConverting.visibility = View.GONE
                     layoutPreview.visibility = View.VISIBLE
 
+                    tvFormatBadge.text = baseResult.originalFormat.uppercase()
                     etBookTitle.setText(baseResult.title)
 
                     fun updateStatsAndPreview(content: String, isNormalized: Boolean = false) {
                         val wordCount = content.split(Regex("\\s+")).size
                         val sizeKb = content.toByteArray().size / 1024
-                        val badge = if (isNormalized) " • 🗣️ Normalized for speech" else ""
-                        tvConversionStats.text = "✔ Extracted ${baseResult.chapterCount} Chapters • ~$wordCount words • $sizeKb KB$badge"
+                        val badge = if (isNormalized) " • 🗣️ Normalized" else ""
+                        val chCount = currentDisplayedResult.chapterCount
+                        val chText = if (chCount == 1) "1 Chapter" else "$chCount Chapters"
+                        tvConversionStats.text = "✔ Extracted $chText • ~$wordCount words • $sizeKb KB$badge"
                         tvTextPreview.text = content.take(1500) + if (content.length > 1500) "\n\n[... Remaining content preserved ...]" else ""
+                        val safeName = "${etBookTitle.text.toString().ifBlank { baseResult.title }.trim().replace(Regex("[^a-zA-Z0-9._-]"), "_")}.txt"
+                        tvDestinationInfo.text = "📁 Saves to: Downloads/$safeName & Local Library"
                     }
 
                     updateStatsAndPreview(baseResult.content, false)
@@ -342,6 +363,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     btnSaveToLibrary.setOnClickListener {
                         val toSave = pendingConvertedResult ?: baseResult
                         val finalTitle = etBookTitle.text.toString().ifBlank { toSave.title }
+
+                        // 1. Save to app's internal library
                         val saved = localBookManager.saveBook(
                             title = finalTitle,
                             author = toSave.author,
@@ -349,9 +372,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             content = toSave.content,
                             chapterCount = toSave.chapterCount
                         )
+
+                        // 2. Save directly to public Downloads folder
+                        val downloadsUri = localBookManager.saveBookToDownloads(finalTitle, toSave.content)
+
                         refreshLibrary()
                         dialog.dismiss()
-                        Toast.makeText(this, "Saved '${saved.title}' to library!", Toast.LENGTH_SHORT).show()
+
+                        val safeName = "${finalTitle.trim().replace(Regex("[^a-zA-Z0-9._-]"), "_")}.txt"
+                        val msg = if (downloadsUri != null) {
+                            "✔ Saved to Library & Downloads/$safeName"
+                        } else {
+                            "Saved '${saved.title}' to library!"
+                        }
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
                     }
 
                     btnExportTxt.setOnClickListener {
@@ -380,6 +414,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                             content = toSave.content,
                             chapterCount = toSave.chapterCount
                         )
+                        // Also save to downloads
+                        localBookManager.saveBookToDownloads(finalTitle, toSave.content)
                         refreshLibrary()
                         dialog.dismiss()
                         ReaderActivity.start(this, filePath = saved.filePath, bookId = saved.id)

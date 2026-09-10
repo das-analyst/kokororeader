@@ -1,7 +1,12 @@
 package com.kokoro.tts.reader.manager
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import com.kokoro.tts.reader.model.SampleBook
 import com.kokoro.tts.reader.model.SavedBook
@@ -135,6 +140,43 @@ class LocalBookManager(private val context: Context) {
             input.copyTo(outputStream)
         }
         outputStream.flush()
+    }
+
+    /**
+     * Saves a text book directly to the device's public Downloads folder.
+     * Uses MediaStore on Android 10+ (API 29+) with zero special permissions needed.
+     */
+    fun saveBookToDownloads(title: String, content: String): Uri? {
+        val safeFileName = "${title.trim().replace(Regex("[^a-zA-Z0-9._-]"), "_")}.txt"
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, safeFileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write(content.toByteArray(Charsets.UTF_8))
+                        output.flush()
+                    }
+                    Log.i(TAG, "Saved '$safeFileName' to Downloads via MediaStore: $uri")
+                }
+                uri
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                val file = File(downloadsDir, safeFileName)
+                file.writeText(content, Charsets.UTF_8)
+                Log.i(TAG, "Saved '$safeFileName' to Downloads via File: ${file.absolutePath}")
+                Uri.fromFile(file)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save book to Downloads folder", e)
+            null
+        }
     }
 
     private fun saveMetadata(books: List<SavedBook>) {
