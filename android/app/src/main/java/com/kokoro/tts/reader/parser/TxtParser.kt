@@ -112,9 +112,15 @@ object TxtParser {
     }
 
     private fun buildSentences(content: String, chapterIndex: Int): List<SentenceItem> {
-        val paragraphs = content.split(Regex("(\\r?\\n)[ \\t]*(\\r?\\n)+"))
+        val rawParagraphs = content.split(Regex("(\\r?\\n)[ \\t]*(\\r?\\n)+"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+
+        val paragraphs = if (rawParagraphs.size <= 1 && content.lines().count { it.isNotBlank() } > 1) {
+            content.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        } else {
+            rawParagraphs
+        }
 
         val result = mutableListOf<SentenceItem>()
         var globalIdx = 0

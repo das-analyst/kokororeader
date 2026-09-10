@@ -69,8 +69,11 @@ object EpubParser {
             val chapterTitle = doc.select("h1, h2, title").firstOrNull()?.text()?.trim()
                 ?: "Chapter ${chapterIndex + 1}"
 
-            // Extract readable text from paragraphs and headers
-            val bodyElements = doc.select("h1, h2, h3, p")
+            // Extract readable text from paragraphs, headers, quotes, and lists
+            var bodyElements = doc.select("h1, h2, h3, h4, h5, h6, p, li, blockquote")
+            if (bodyElements.isEmpty()) {
+                bodyElements = doc.select("div, h1, h2, h3, h4, h5, h6, p, li, blockquote")
+            }
             val textBuilder = StringBuilder()
             if (bodyElements.isNotEmpty()) {
                 for (el in bodyElements) {
@@ -186,9 +189,15 @@ object EpubParser {
     }
 
     private fun buildSentences(content: String, chapterIndex: Int): List<SentenceItem> {
-        val paragraphs = content.split(Regex("(\\r?\\n)[ \\t]*(\\r?\\n)+"))
+        val rawParagraphs = content.split(Regex("(\\r?\\n)[ \\t]*(\\r?\\n)+"))
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+
+        val paragraphs = if (rawParagraphs.size <= 1 && content.lines().count { it.isNotBlank() } > 1) {
+            content.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        } else {
+            rawParagraphs
+        }
 
         val result = mutableListOf<SentenceItem>()
         var globalIdx = 0

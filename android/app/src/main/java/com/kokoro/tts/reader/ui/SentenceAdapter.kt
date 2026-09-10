@@ -70,7 +70,7 @@ class SentenceAdapter(
         // Paragraph separation spacing
         val density = holder.itemView.resources.displayMetrics.density
         val topPadding = (4 * density).toInt()
-        val bottomPadding = if (item.isParagraphEnd) (16 * density).toInt() else (4 * density).toInt()
+        val bottomPadding = if (item.isParagraphEnd) (20 * density).toInt() else (4 * density).toInt()
         val sidePadding = (16 * density).toInt()
         holder.container.setPadding(sidePadding, topPadding, sidePadding, bottomPadding)
 

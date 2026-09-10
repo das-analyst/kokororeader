@@ -27,11 +27,11 @@ object SpeechDirector {
     )
 
     // Base silence constants (in milliseconds)
-    const val SILENCE_INTRA_PARAGRAPH_MS = 220L   // Breath pause between standard sentences
-    const val SILENCE_DIALOGUE_MS = 340L          // Natural pause after spoken dialogue
-    const val SILENCE_PARAGRAPH_BREAK_MS = 700L   // Thoughtful pause between paragraphs
-    const val SILENCE_QUESTION_MS = 380L          // Deliberate pause after question
-    const val SILENCE_CHAPTER_END_MS = 1400L      // Deep pause between chapters
+    const val SILENCE_INTRA_PARAGRAPH_MS = 250L   // Breath pause between standard sentences (0.25s)
+    const val SILENCE_DIALOGUE_MS = 450L          // Natural pause after spoken dialogue (0.45s)
+    const val SILENCE_QUESTION_MS = 500L          // Deliberate pause after question (0.50s)
+    const val SILENCE_PARAGRAPH_BREAK_MS = 1400L  // Prominent, clearly noticeable pause between paragraphs (1.4s)
+    const val SILENCE_CHAPTER_END_MS = 2400L      // Deep dramatic pause between chapters (2.4s)
 
     /**
      * Direct the performance of a sentence given its context.
@@ -46,34 +46,54 @@ object SpeechDirector {
         baseSpeed: Float = 1.0f
     ): DirectedPerformance {
         val text = sentence.text.trim()
+        val cleanEnd = text.trimEnd('"', '”', '’', '\'', ' ', '\t')
+
+        val isHeading = text.startsWith("CHAPTER", ignoreCase = true) ||
+                text.startsWith("#") ||
+                text.matches(Regex("(?i)^(?:Chapter|Section|Part|Book)\\s+\\d+.*"))
+
+        val isExclamation = cleanEnd.endsWith("!") || text.contains("!\"") || text.contains("!”") || text.contains("!'")
+        val isQuestion = cleanEnd.endsWith("?") || text.contains("?\"") || text.contains("?”") || text.contains("?'")
 
         // 1. Classify role
         val role = when {
-            text.startsWith("CHAPTER", ignoreCase = true) || text.startsWith("#") -> SentenceRole.HEADING
+            isHeading -> SentenceRole.HEADING
             sentence.isDialogue -> SentenceRole.DIALOGUE
-            text.endsWith("!") -> SentenceRole.EXCLAMATION
-            text.endsWith("?") -> SentenceRole.QUESTION
+            isExclamation -> SentenceRole.EXCLAMATION
+            isQuestion -> SentenceRole.QUESTION
             else -> SentenceRole.NARRATION
         }
 
-        // 2. Compute dynamic tempo modulation (micro-cadence)
+        // 2. Compute dynamic tempo modulation (micro-cadence with expressive room)
         val speedMultiplier = when (role) {
-            SentenceRole.HEADING -> 0.92f      // Headings spoken with deliberate gravitas
-            SentenceRole.DIALOGUE -> 1.03f     // Spoken dialogue slightly quicker, animated
-            SentenceRole.EXCLAMATION -> 1.05f  // Urgency / excitement
-            SentenceRole.QUESTION -> 0.98f     // Thoughtful upward cadence
+            SentenceRole.HEADING -> 0.85f      // Headings spoken with deliberate gravitas (-15%)
+            SentenceRole.DIALOGUE -> when {
+                isExclamation -> 1.12f          // Urgent / excited dialogue (+12%)
+                isQuestion -> 0.94f             // Inquiring dialogue question (-6%)
+                else -> 1.08f                  // Animated, conversational spoken dialogue (+8%)
+            }
+            SentenceRole.EXCLAMATION -> 1.12f  // Urgency / excitement in narrative (+12%)
+            SentenceRole.QUESTION -> 0.92f     // Thoughtful, reflective upward cadence (-8%)
             SentenceRole.NARRATION -> 1.00f    // Steady natural pace
         }
-        val effectiveSpeed = (baseSpeed * speedMultiplier).coerceIn(0.5f, 2.5f)
+
+        // Nuanced pacing based on clause weight / sentence length
+        val wordCount = text.split(Regex("\\s+")).count { it.isNotBlank() }
+        val lengthMultiplier = when {
+            wordCount in 1..4 && role != SentenceRole.HEADING -> 1.03f  // Short punchy sentence (+3%)
+            wordCount >= 28 && role != SentenceRole.HEADING -> 0.96f   // Long complex narrative sentence (-4%)
+            else -> 1.00f
+        }
+
+        val effectiveSpeed = (baseSpeed * speedMultiplier * lengthMultiplier).coerceIn(0.5f, 2.5f)
 
         // 3. Compute post-sentence silence duration
         val postSilenceMs = when {
             isLastSentenceInChapter -> SILENCE_CHAPTER_END_MS
             sentence.isParagraphEnd -> SILENCE_PARAGRAPH_BREAK_MS
-            role == SentenceRole.QUESTION -> SILENCE_QUESTION_MS
-            role == SentenceRole.DIALOGUE -> SILENCE_DIALOGUE_MS
-            role == SentenceRole.EXCLAMATION -> SILENCE_DIALOGUE_MS
             role == SentenceRole.HEADING -> SILENCE_PARAGRAPH_BREAK_MS
+            isQuestion -> SILENCE_QUESTION_MS
+            isExclamation || role == SentenceRole.DIALOGUE -> SILENCE_DIALOGUE_MS
             else -> SILENCE_INTRA_PARAGRAPH_MS
         }
 
@@ -81,7 +101,7 @@ object SpeechDirector {
             role = role,
             effectiveSpeed = effectiveSpeed,
             postSilenceMs = postSilenceMs,
-            isExpressive = role == SentenceRole.DIALOGUE || role == SentenceRole.EXCLAMATION
+            isExpressive = role == SentenceRole.DIALOGUE || role == SentenceRole.EXCLAMATION || isExclamation
         )
     }
 

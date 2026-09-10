@@ -265,6 +265,7 @@ class BookPlayer(
 
                 if (sentenceAudio != null) {
                     val chunk = AudioChunk(myGenId, synthIndex, sentenceAudio.speechPcm, sentenceAudio.silencePcm, isLast)
+                    Log.i(TAG, "Director: sentence $synthIndex | role=${performance.role} | speed=${"%.2f".format(performance.effectiveSpeed)} (base=$currentSpeed) | silence=${performance.postSilenceMs}ms | pEnd=${sentence.isParagraphEnd}")
                     var offered = false
                     while (isPlaying.get() && generationId.get() == myGenId && !offered) {
                         try {
@@ -306,6 +307,7 @@ class BookPlayer(
                 currentSentenceIndex.set(chunk.sentenceIndex)
                 listener?.onBuffering(false)
                 listener?.onSentenceStarted(chunk.sentenceIndex)
+                Log.i(TAG, "Playing sentence ${chunk.sentenceIndex}: ${chunk.pcm.size}B speech + ${chunk.silencePcm.size}B silence (${chunk.silencePcm.size / 48}ms)")
 
                 // 1. Stream speech PCM bytes to AudioTrack in chunks
                 val track = audioTrack ?: continue
