@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -25,6 +28,12 @@
                 android:resource="@xml/tts_engine" />
         </service>
 
+        <!-- Foreground Service for Background Audiobook Playback & Lock Screen Controls -->
+        <service
+            android:name=".reader.service.BookPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <!-- Voice Selection & Engine Settings Activity -->
         <activity
             android:name=".MainActivity"
@@ -39,7 +48,8 @@
         <!-- Dedicated Ebook Reader Activity -->
         <activity
             android:name=".reader.ui.ReaderActivity"
-            android:exported="false"
+            android:exported="true"
+            android:launchMode="singleTop"
             android:label="Kokoro Ebook Reader" />
 
     </application>

@@ -52,9 +52,7 @@ object TxtParser {
                     .trim()
 
                 if (cleanedFm.length > 50) {
-                    val fmSentences = TextSplitter.splitIntoSentences(cleanedFm).mapIndexed { sIdx, s ->
-                        SentenceItem(sIdx, s, 0)
-                    }
+                    val fmSentences = buildSentences(cleanedFm, 0)
                     if (fmSentences.isNotEmpty()) {
                         chapters.add(Chapter(0, "Introduction / Front Matter", cleanedFm, fmSentences))
                     }
@@ -63,10 +61,7 @@ object TxtParser {
 
             for (ch in detection.chapters) {
                 val chIndex = chapters.size
-                val rawSentences = TextSplitter.splitIntoSentences(ch.content)
-                val sentences = rawSentences.mapIndexed { sIdx, s ->
-                    SentenceItem(sIdx, s, chIndex)
-                }
+                val sentences = buildSentences(ch.content, chIndex)
                 chapters.add(Chapter(chIndex, ch.title, ch.content, sentences))
             }
 
@@ -87,11 +82,7 @@ object TxtParser {
                 val chapterBlock = text.substring(start, end).trim()
                 val chapterTitle = matches[i].groupValues[1].replace(Regex("[#=]+"), "").trim()
 
-                val rawSentences = TextSplitter.splitIntoSentences(chapterBlock)
-                val sentences = rawSentences.mapIndexed { idx, s ->
-                    SentenceItem(idx, s, i)
-                }
-
+                val sentences = buildSentences(chapterBlock, i)
                 if (sentences.isNotEmpty()) {
                     chapters.add(Chapter(i, chapterTitle, chapterBlock, sentences))
                 }
@@ -108,17 +99,55 @@ object TxtParser {
                 val chapterTitle = "Section ${idx + 1}"
                 val chapterText = chunk.joinToString(" ")
                 val sentences = chunk.mapIndexed { sIdx, s ->
-                    SentenceItem(sIdx, s, idx)
+                    SentenceItem(sIdx, s, idx, isParagraphEnd = sIdx == chunk.size - 1, isDialogue = isDialogue(s))
                 }
                 chapters.add(Chapter(idx, chapterTitle, chapterText, sentences))
             }
         } else {
-            val sentences = rawSentences.mapIndexed { idx, s ->
-                SentenceItem(idx, s, 0)
-            }
+            val sentences = buildSentences(text, 0)
             chapters.add(Chapter(0, bookTitle, text, sentences))
         }
 
         return Book(bookTitle, bookAuthor, chapters)
     }
+
+    private fun buildSentences(content: String, chapterIndex: Int): List<SentenceItem> {
+        val paragraphs = content.split(Regex("(\\r?\\n)[ \\t]*(\\r?\\n)+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        val result = mutableListOf<SentenceItem>()
+        var globalIdx = 0
+
+        for (paragraph in paragraphs) {
+            val pSentences = TextSplitter.splitIntoSentences(paragraph)
+            for ((sIdx, sText) in pSentences.withIndex()) {
+                val isLastInParagraph = sIdx == pSentences.size - 1
+                val isDialogue = isDialogue(sText)
+                result.add(
+                    SentenceItem(
+                        index = globalIdx++,
+                        text = sText,
+                        chapterIndex = chapterIndex,
+                        isParagraphEnd = isLastInParagraph,
+                        isDialogue = isDialogue
+                    )
+                )
+            }
+        }
+        return if (result.isNotEmpty()) result else {
+            TextSplitter.splitIntoSentences(content).mapIndexed { idx, s ->
+                SentenceItem(idx, s, chapterIndex, isParagraphEnd = true, isDialogue = isDialogue(s))
+            }
+        }
+    }
+
+    private fun isDialogue(text: String): Boolean {
+        val t = text.trim()
+        return t.startsWith("\"") || t.startsWith("“") || t.startsWith("‘") ||
+                t.endsWith("\"") || t.endsWith("”") || t.endsWith("’") ||
+                (t.contains("\"") && t.indexOf("\"") != t.lastIndexOf("\"")) ||
+                (t.contains("“") && t.contains("”"))
+    }
 }
+

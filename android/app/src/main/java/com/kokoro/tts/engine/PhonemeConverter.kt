@@ -3,6 +3,7 @@ package com.kokoro.tts.engine
 import android.content.Context
 import android.util.Log
 import com.kokoro.tts.engine.normalizer.TextNormalizer
+import com.kokoro.tts.reader.manager.PronunciationManager
 
 /**
  * Converts English text to IPA phonemes compatible with the Kokoro model.
@@ -16,6 +17,7 @@ class PhonemeConverter(
         private const val TAG = "PhonemeConverter"
     }
 
+    private val appContext = context.applicationContext
     private val espeakBridge = EspeakBridge(context)
 
     init {
@@ -42,10 +44,12 @@ class PhonemeConverter(
     }
 
     /**
-     * Normalize written text into natural spoken words (NeMo TN architecture).
+     * Normalize written text into natural spoken words (NeMo TN architecture),
+     * with custom pronunciation dictionary rules applied first.
      */
     fun normalizeText(text: String): String {
-        return TextNormalizer.normalize(text)
+        val withPronunciationRules = PronunciationManager.getInstance(appContext).applyRules(text)
+        return TextNormalizer.normalize(withPronunciationRules)
     }
 
     /**

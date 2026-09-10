@@ -89,15 +89,8 @@ object EpubParser {
                 continue
             }
 
-            // Segment chapter text into sentences
-            val rawSentences = TextSplitter.splitIntoSentences(fullText)
-            val sentenceItems = rawSentences.mapIndexed { idx, s ->
-                SentenceItem(
-                    index = idx,
-                    text = s,
-                    chapterIndex = chapterIndex
-                )
-            }
+            // Segment chapter text into sentences with paragraph and dialogue awareness
+            val sentenceItems = buildSentences(fullText, chapterIndex)
 
             if (sentenceItems.isNotEmpty()) {
                 chapters.add(
@@ -190,5 +183,44 @@ object EpubParser {
 
         val spineHrefs = spine.mapNotNull { manifest[it] }
         return OpfMetadata(title, author, if (spineHrefs.isNotEmpty()) spineHrefs else manifest.values.toList())
+    }
+
+    private fun buildSentences(content: String, chapterIndex: Int): List<SentenceItem> {
+        val paragraphs = content.split(Regex("(\\r?\\n)[ \\t]*(\\r?\\n)+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        val result = mutableListOf<SentenceItem>()
+        var globalIdx = 0
+
+        for (paragraph in paragraphs) {
+            val pSentences = TextSplitter.splitIntoSentences(paragraph)
+            for ((sIdx, sText) in pSentences.withIndex()) {
+                val isLastInParagraph = sIdx == pSentences.size - 1
+                val isDialogue = isDialogue(sText)
+                result.add(
+                    SentenceItem(
+                        index = globalIdx++,
+                        text = sText,
+                        chapterIndex = chapterIndex,
+                        isParagraphEnd = isLastInParagraph,
+                        isDialogue = isDialogue
+                    )
+                )
+            }
+        }
+        return if (result.isNotEmpty()) result else {
+            TextSplitter.splitIntoSentences(content).mapIndexed { idx, s ->
+                SentenceItem(idx, s, chapterIndex, isParagraphEnd = true, isDialogue = isDialogue(s))
+            }
+        }
+    }
+
+    private fun isDialogue(text: String): Boolean {
+        val t = text.trim()
+        return t.startsWith("\"") || t.startsWith("“") || t.startsWith("‘") ||
+                t.endsWith("\"") || t.endsWith("”") || t.endsWith("’") ||
+                (t.contains("\"") && t.indexOf("\"") != t.lastIndexOf("\"")) ||
+                (t.contains("“") && t.contains("”"))
     }
 }

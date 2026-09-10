@@ -69,6 +69,9 @@ dependencies {
     // UI Components for Ebook Reader
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
+    // MediaSession & Foreground Media Playback for Lock Screen / Bluetooth
+    implementation("androidx.media:media:1.7.0")
+
     // PDF Text Extraction (Pure Java, 16 KB page-size safe)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 

@@ -1,6 +1,5 @@
 package com.kokoro.tts.reader.player
 
-import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -12,6 +11,7 @@ import com.kokoro.tts.engine.KokoroEngine
 import com.kokoro.tts.engine.PhonemeConverter
 import com.kokoro.tts.engine.Tokenizer
 import com.kokoro.tts.engine.VoiceStyleLoader
+import com.kokoro.tts.engine.director.SpeechDirector
 import com.kokoro.tts.reader.model.SentenceItem
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -21,8 +21,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Direct AudioTrack lookahead streaming player for Ebooks.
  *
- * Pre-synthesizes upcoming sentences in a background producer thread while AudioTrack
- * continuously plays the current sentence, guaranteeing 0 ms gap between sentences.
+ * Integrated with SpeechDirector (Path A: "Smart Director + Fast Performer"):
+ * Dynamically modulates sentence tempo and streams hardware-level PCM silence buffers
+ * (220ms - 1400ms) into AudioTrack, eliminating abrupt 0ms runaway playback.
  */
 class BookPlayer(
     private val kokoroEngine: KokoroEngine,
@@ -42,8 +43,8 @@ class BookPlayer(
         fun onPlaybackStateChanged(isPlaying: Boolean)
         fun onBuffering(isBuffering: Boolean)
         fun onError(message: String)
+        fun onChapterFinished(lastIndex: Int) {}
     }
-
 
     private var sentences: List<SentenceItem> = emptyList()
     private val currentSentenceIndex = AtomicInteger(0)
@@ -56,15 +57,22 @@ class BookPlayer(
     var currentVoice: String = KokoroTtsService.DEFAULT_VOICE
     var currentSpeed: Float = 1.0f
 
+    data class SentenceAudio(
+        val speechPcm: ByteArray,
+        val silencePcm: ByteArray
+    )
+
     // 50-entry in-memory sentence audio cache
-    private val audioCache = object : LruCache<String, ByteArray>(50) {
-        override fun sizeOf(key: String, value: ByteArray): Int = 1
+    private val audioCache = object : LruCache<String, SentenceAudio>(50) {
+        override fun sizeOf(key: String, value: SentenceAudio): Int = 1
     }
 
     private data class AudioChunk(
         val genId: Int,
         val sentenceIndex: Int,
-        val pcm: ByteArray
+        val pcm: ByteArray,
+        val silencePcm: ByteArray,
+        val isLast: Boolean
     )
 
     private val audioQueue = LinkedBlockingQueue<AudioChunk>(LOOKAHEAD_QUEUE_CAPACITY)
@@ -115,6 +123,10 @@ class BookPlayer(
         preWarmSentence(startIndex)
     }
 
+    private fun getCacheKey(sentence: SentenceItem): String {
+        return "$currentVoice:$currentSpeed:${sentence.text}:${sentence.isParagraphEnd}:${sentence.isDialogue}"
+    }
+
     /**
      * Pre-synthesizes a sentence in the background into the audio cache.
      * Called when a book or chapter loads so Sentence 0 is immediately ready for instant playback.
@@ -123,12 +135,15 @@ class BookPlayer(
         if (index < 0 || index >= sentences.size) return
         Thread({
             val sentence = sentences.getOrNull(index) ?: return@Thread
-            val cacheKey = "$currentVoice:$currentSpeed:${sentence.text}"
+            val isLast = index == sentences.size - 1
+            val cacheKey = getCacheKey(sentence)
             if (audioCache.get(cacheKey) == null) {
-                val pcm = synthesize(sentence.text)
+                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed)
+                val pcm = synthesize(sentence.text, performance.effectiveSpeed)
                 if (pcm != null && pcm.isNotEmpty()) {
-                    audioCache.put(cacheKey, pcm)
-                    Log.i(TAG, "Pre-warmed sentence $index into cache (${pcm.size} bytes)")
+                    val silencePcm = SpeechDirector.generateSilencePcm(performance.postSilenceMs, SAMPLE_RATE)
+                    audioCache.put(cacheKey, SentenceAudio(pcm, silencePcm))
+                    Log.i(TAG, "Pre-warmed sentence $index into cache (${pcm.size} bytes speech, ${silencePcm.size} bytes silence, role=${performance.role})")
                 }
             }
         }, "BookPlayer-PreWarmer").start()
@@ -143,7 +158,7 @@ class BookPlayer(
         listener?.onPlaybackStateChanged(true)
 
         val startSentence = sentences.getOrNull(targetSentenceIndex.get())
-        val isCached = startSentence != null && audioCache.get("$currentVoice:$currentSpeed:${startSentence.text}") != null
+        val isCached = startSentence != null && audioCache.get(getCacheKey(startSentence)) != null
         if (!isCached) {
             listener?.onBuffering(true)
         }
@@ -176,7 +191,7 @@ class BookPlayer(
         clearQueue()
 
         val targetSentence = sentences.getOrNull(clamped)
-        val isCached = targetSentence != null && audioCache.get("$currentVoice:$currentSpeed:${targetSentence.text}") != null
+        val isCached = targetSentence != null && audioCache.get(getCacheKey(targetSentence)) != null
         if (isPlaying.get() && !isCached) {
             listener?.onBuffering(true)
         }
@@ -231,14 +246,25 @@ class BookPlayer(
                 }
 
                 val sentence = sentences[synthIndex]
-                val cacheKey = "$currentVoice:$currentSpeed:${sentence.text}"
+                val isLast = synthIndex == sentences.size - 1
+                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed)
+                val cacheKey = getCacheKey(sentence)
                 val cached = audioCache.get(cacheKey)
 
-                val pcm = cached ?: synthesize(sentence.text)
-                if (pcm != null && pcm.isNotEmpty()) {
-                    audioCache.put(cacheKey, pcm)
+                val sentenceAudio = if (cached != null) {
+                    cached
+                } else {
+                    val pcm = synthesize(sentence.text, performance.effectiveSpeed)
+                    if (pcm != null && pcm.isNotEmpty()) {
+                        val silence = SpeechDirector.generateSilencePcm(performance.postSilenceMs, SAMPLE_RATE)
+                        val sa = SentenceAudio(pcm, silence)
+                        audioCache.put(cacheKey, sa)
+                        sa
+                    } else null
+                }
 
-                    val chunk = AudioChunk(myGenId, synthIndex, pcm)
+                if (sentenceAudio != null) {
+                    val chunk = AudioChunk(myGenId, synthIndex, sentenceAudio.speechPcm, sentenceAudio.silencePcm, isLast)
                     var offered = false
                     while (isPlaying.get() && generationId.get() == myGenId && !offered) {
                         try {
@@ -252,7 +278,7 @@ class BookPlayer(
             }
         }, "BookPlayer-Synthesizer").apply { start() }
 
-        // 2. Playback Thread (Consumer) - streams PCM to AudioTrack continuously
+        // 2. Playback Thread (Consumer) - streams PCM and directed silence to AudioTrack continuously
         playbackThread = Thread({
             var activeGenId = generationId.get()
 
@@ -281,7 +307,7 @@ class BookPlayer(
                 listener?.onBuffering(false)
                 listener?.onSentenceStarted(chunk.sentenceIndex)
 
-                // Stream PCM bytes to AudioTrack in chunks
+                // 1. Stream speech PCM bytes to AudioTrack in chunks
                 val track = audioTrack ?: continue
                 var offset = 0
                 val data = chunk.pcm
@@ -296,11 +322,29 @@ class BookPlayer(
                     }
                     offset += count
                 }
+
+                // 2. Stream hardware PCM silence buffer for natural cadence
+                if (chunk.silencePcm.isNotEmpty() && isPlaying.get() && chunk.genId == generationId.get()) {
+                    var silenceOffset = 0
+                    val silenceData = chunk.silencePcm
+                    while (silenceOffset < silenceData.size && isPlaying.get() && chunk.genId == generationId.get()) {
+                        val count = minOf(chunkSize, silenceData.size - silenceOffset)
+                        val written = track.write(silenceData, silenceOffset, count)
+                        if (written < 0) break
+                        silenceOffset += count
+                    }
+                }
+
+                // 3. Handle end of chapter
+                if (chunk.isLast && isPlaying.get() && chunk.genId == generationId.get()) {
+                    pause()
+                    listener?.onChapterFinished(chunk.sentenceIndex)
+                }
             }
         }, "BookPlayer-Playback").apply { start() }
     }
 
-    private fun synthesize(text: String): ByteArray? {
+    private fun synthesize(text: String, speed: Float): ByteArray? {
         return try {
             val phonemes = phonemeConverter.convertTextToPhonemes(text)
             if (phonemes.isBlank()) return null
@@ -309,7 +353,7 @@ class BookPlayer(
             if (tokens.size <= 2) return null
 
             val styleVector = voiceLoader.getStyleVector(currentVoice, tokens.size - 2)
-            kokoroEngine.synthesizeToPcm(tokens, styleVector, currentSpeed)
+            kokoroEngine.synthesizeToPcm(tokens, styleVector, speed)
         } catch (e: Exception) {
             Log.e(TAG, "Synthesis error for: '$text'", e)
             null

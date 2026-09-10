@@ -2,16 +2,21 @@ package com.kokoro.tts.reader.ui
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.kokoro.tts.R
+import com.kokoro.tts.reader.model.ReaderTheme
 import com.kokoro.tts.reader.model.SentenceItem
 
 class SentenceAdapter(
     private var sentences: List<SentenceItem> = emptyList(),
+    private var currentTheme: ReaderTheme = ReaderTheme.CLEAN_PAPER,
+    private var textSizeSp: Float = 18f,
+    private var lineSpacingMultiplier: Float = 1.45f,
     private val onSentenceClicked: (Int) -> Unit
 ) : RecyclerView.Adapter<SentenceAdapter.SentenceViewHolder>() {
 
@@ -34,6 +39,21 @@ class SentenceAdapter(
         }
     }
 
+    fun setTheme(theme: ReaderTheme) {
+        currentTheme = theme
+        notifyDataSetChanged()
+    }
+
+    fun setTextSize(sizeSp: Float) {
+        textSizeSp = sizeSp
+        notifyDataSetChanged()
+    }
+
+    fun setLineSpacing(multiplier: Float) {
+        lineSpacingMultiplier = multiplier
+        notifyDataSetChanged()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SentenceViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_sentence, parent, false)
         return SentenceViewHolder(view)
@@ -44,15 +64,23 @@ class SentenceAdapter(
         val isActive = position == activeIndex
 
         holder.tvText.text = item.text
+        holder.tvText.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
+        holder.tvText.setLineSpacing(0f, lineSpacingMultiplier)
+
+        // Paragraph separation spacing
+        val density = holder.itemView.resources.displayMetrics.density
+        val topPadding = (4 * density).toInt()
+        val bottomPadding = if (item.isParagraphEnd) (16 * density).toInt() else (4 * density).toInt()
+        val sidePadding = (16 * density).toInt()
+        holder.container.setPadding(sidePadding, topPadding, sidePadding, bottomPadding)
 
         if (isActive) {
-            // Warm highlight for currently spoken sentence
-            holder.container.setBackgroundColor(Color.parseColor("#FFE8A3"))
-            holder.tvText.setTextColor(Color.parseColor("#1A1A1A"))
+            holder.container.setBackgroundColor(currentTheme.activeHighlightColor)
+            holder.tvText.setTextColor(currentTheme.activeTextColor)
             holder.tvText.setTypeface(null, Typeface.BOLD)
         } else {
             holder.container.setBackgroundColor(Color.TRANSPARENT)
-            holder.tvText.setTextColor(Color.parseColor("#333333"))
+            holder.tvText.setTextColor(currentTheme.primaryTextColor)
             holder.tvText.setTypeface(null, Typeface.NORMAL)
         }
 

@@ -5,7 +5,9 @@ import java.io.Serializable
 data class SentenceItem(
     val index: Int,
     val text: String,
-    val chapterIndex: Int
+    val chapterIndex: Int,
+    val isParagraphEnd: Boolean = false,
+    val isDialogue: Boolean = false
 ) : Serializable
 
 data class Chapter(
