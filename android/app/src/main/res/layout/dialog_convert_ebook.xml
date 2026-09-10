@@ -175,13 +175,13 @@
             android:textColor="#616161"
             android:layout_marginTop="6dp" />
 
-        <!-- Primary Action: Save to Library & Downloads -->
+        <!-- Primary Action: Save to Library -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSaveToLibrary"
             android:layout_width="match_parent"
             android:layout_height="50dp"
             android:layout_marginTop="12dp"
-            android:text="Save to Library &amp; Downloads"
+            android:text="Save to Library"
             android:textSize="14sp"
             android:textStyle="bold"
             app:cornerRadius="10dp"
