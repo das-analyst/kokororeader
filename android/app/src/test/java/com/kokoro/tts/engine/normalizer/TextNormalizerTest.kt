@@ -65,6 +65,10 @@ class TextNormalizerTest {
         assertEquals("for example, ", AbbreviationNormalizer.normalize("e.g. "))
         assertEquals("et cetera", AbbreviationNormalizer.normalize("etc."))
         assertEquals("three thirty p m", AbbreviationNormalizer.normalize("3:30pm"))
+        assertEquals("Mister C M Park", AbbreviationNormalizer.normalize("Mr. C. M. Park"))
+        assertEquals("Arthur C Clarke", AbbreviationNormalizer.normalize("Arthur C. Clarke"))
+        assertEquals("J R R Tolkien", AbbreviationNormalizer.normalize("J. R. R. Tolkien"))
+        assertEquals("Doctor J Watson", AbbreviationNormalizer.normalize("Dr. J. Watson"))
     }
 
     @Test
@@ -73,6 +77,8 @@ class TextNormalizerTest {
         assertEquals("The fact was known.", ArtifactCleaner.clean("The fact was known.[1]"))
         assertEquals("information", ArtifactCleaner.clean("infor-\nmation"))
         assertEquals("\"quoted\"", ArtifactCleaner.clean("“quoted”"))
+        assertEquals("Mr. C. M. Park", ArtifactCleaner.clean("Mr.C.M. Park"))
+        assertEquals("J. R. R. Tolkien", ArtifactCleaner.clean("J.R.R. Tolkien"))
     }
 
     @Test

@@ -77,6 +77,22 @@ object AbbreviationNormalizer {
             result = regex.replace(result, replacement)
         }
 
+        // 5. Name initials speech normalization (e.g. "Mr. C. M. Park" -> "Mister C M Park", "Arthur C. Clarke" -> "Arthur C Clarke")
+        // Removes periods after single-letter initials before names so Kokoro/eSpeak pronounces them fluidly without pause
+        val chainedPattern = Regex("\\b([A-Z])\\.\\s*(?=[A-Z]\\.)")
+        while (chainedPattern.containsMatchIn(result)) {
+            result = chainedPattern.replace(result, "$1 ")
+        }
+        val surnameInitialPattern = Regex("\\b([A-Z])\\.\\s+(?!$SENTENCE_STARTERS)(?=[A-Z][a-z]+)")
+        result = surnameInitialPattern.replace(result, "$1 ")
+
         return result
     }
+
+    private val SENTENCE_STARTERS = listOf(
+        "The", "This", "That", "These", "Those", "He", "She", "It", "They", "We", "You", "I",
+        "There", "Then", "Now", "When", "Where", "Why", "What", "How", "If", "Although",
+        "Because", "After", "Before", "Since", "While", "So", "And", "But", "In", "On",
+        "At", "To", "From", "By", "With", "As", "An", "A"
+    ).joinToString("|", prefix = "(?:", postfix = ")\\b")
 }

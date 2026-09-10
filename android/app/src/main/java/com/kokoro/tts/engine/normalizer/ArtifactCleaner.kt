@@ -40,7 +40,17 @@ object ArtifactCleaner {
             .replace('—', '-')
             .replace('–', '-')
 
-        // 5. Clean excessive spaces and multiple newlines
+        // 5. Clean up name initial spacing and missing spaces after titles
+        // E.g. "Mr.Park" -> "Mr. Park", "Mr.C.M." -> "Mr. C. M."
+        t = t.replace(Regex("\\b(Mr|Mrs|Ms|Dr|Prof|Capt|Col|Gen|Lt|Sgt|Rev|Hon)\\.([A-Z])"), "$1. $2")
+
+        // E.g. "C.M." -> "C. M.", "J.R.R." -> "J. R. R."
+        while (Regex("\\b([A-Z])\\.([A-Z])\\.").containsMatchIn(t)) {
+            t = t.replace(Regex("\\b([A-Z])\\.([A-Z])\\."), "$1. $2.")
+        }
+        t = t.replace(Regex("(?<=\\b[A-Z]\\.)\\s{2,}(?=[A-Z])"), " ")
+
+        // 6. Clean excessive spaces and multiple newlines
         t = t.replace(Regex("[ \\t]+"), " ")
         t = t.replace(Regex("\\n{3,}"), "\n\n")
 
