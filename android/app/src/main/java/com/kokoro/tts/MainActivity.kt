@@ -31,6 +31,7 @@ import com.kokoro.tts.reader.converter.EpubToTextConverter
 import com.kokoro.tts.reader.converter.PdfToTextConverter
 import com.kokoro.tts.reader.manager.LocalBookManager
 import com.kokoro.tts.reader.model.SavedBook
+import com.kokoro.tts.reader.model.SpeakerProfile
 import com.kokoro.tts.reader.ui.BookLibraryAdapter
 import com.kokoro.tts.reader.ui.ReaderActivity
 import java.io.File
@@ -45,6 +46,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private lateinit var voiceLoader: VoiceStyleLoader
     private lateinit var voiceSpinner: Spinner
+    private var availableVoiceIds: List<String> = emptyList()
     private lateinit var sampleTextInput: EditText
     private lateinit var btnTestVoice: Button
     private lateinit var btnOpenSettings: Button
@@ -175,7 +177,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
             val text = sampleTextInput.text.toString().trim()
             if (text.isNotEmpty()) {
-                val selectedVoice = voiceSpinner.selectedItem?.toString() ?: KokoroTtsService.DEFAULT_VOICE
+                val selectedVoice = availableVoiceIds.getOrNull(voiceSpinner.selectedItemPosition) ?: KokoroTtsService.DEFAULT_VOICE
                 statusText.text = "Synthesizing voice sample..."
                 btnTestVoice.text = "Stop"
 
@@ -451,8 +453,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun setupVoiceSpinner() {
-        val voices = voiceLoader.getAvailableVoices()
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voices)
+        val rawVoices = voiceLoader.getAvailableVoices()
+        val sortedProfiles = SpeakerProfile.PROFILES.filter { rawVoices.contains(it.id) }
+        val remainingIds = rawVoices.filter { id -> sortedProfiles.none { it.id == id } }
+        availableVoiceIds = sortedProfiles.map { it.id } + remainingIds
+
+        val displayLabels = availableVoiceIds.map { SpeakerProfile.getDisplayName(it) }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, displayLabels)
         voiceSpinner.adapter = adapter
     }
 

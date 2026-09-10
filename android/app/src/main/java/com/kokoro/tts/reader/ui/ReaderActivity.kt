@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
+import com.kokoro.tts.KokoroTtsService
 import com.kokoro.tts.R
 import com.kokoro.tts.engine.KokoroEngine
 import com.kokoro.tts.engine.PhonemeConverter
@@ -36,6 +37,7 @@ import com.kokoro.tts.reader.manager.PronunciationManager
 import com.kokoro.tts.reader.model.Book
 import com.kokoro.tts.reader.model.ReaderTheme
 import com.kokoro.tts.reader.model.SampleBook
+import com.kokoro.tts.reader.model.SpeakerProfile
 import com.kokoro.tts.reader.parser.TxtParser
 import com.kokoro.tts.reader.player.BookPlayer
 import com.kokoro.tts.reader.player.SleepTimerManager
@@ -52,6 +54,8 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         private const val KEY_THEME = "pref_theme_id"
         private const val KEY_FONT_SIZE = "pref_font_size_sp"
         private const val KEY_LINE_SPACING = "pref_line_spacing"
+        private const val KEY_VOICE = "pref_reading_voice"
+        private const val KEY_SPEED = "pref_reading_speed"
 
         fun start(context: Context, filePath: String? = null, bookId: String? = null) {
             val intent = Intent(context, ReaderActivity::class.java)
@@ -194,6 +198,7 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         btnAppearance.setOnClickListener { showAppearanceDialog() }
         btnToc.setOnClickListener { showTableOfContents() }
         btnSettings.setOnClickListener { showVoiceSpeedDialog() }
+        tvVoiceSpeed.setOnClickListener { showVoiceSpeedDialog() }
     }
 
     private fun handleNextSentence() {
@@ -390,6 +395,13 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             listener = this
         )
 
+        val prefs = getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+        val savedVoice = prefs.getString(KEY_VOICE, KokoroTtsService.DEFAULT_VOICE) ?: KokoroTtsService.DEFAULT_VOICE
+        val savedSpeed = prefs.getFloat(KEY_SPEED, 1.0f)
+        player?.currentVoice = savedVoice
+        player?.currentSpeed = savedSpeed
+        updateVoiceSpeedLabel()
+
         val saved = bookId?.let { id -> localBookManager.getAllSavedBooks().find { it.id == id } }
         val startChapter = (saved?.lastReadChapter ?: 0).coerceIn(0, maxOf(0, readyBook.chapters.size - 1))
         val startSentence = (saved?.lastReadSentence ?: 0).coerceIn(0, maxOf(0, (readyBook.chapters.getOrNull(startChapter)?.sentences?.size ?: 1) - 1))
@@ -451,9 +463,12 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
     }
 
     private fun updateVoiceSpeedLabel() {
-        val voice = player?.currentVoice ?: "af_heart"
-        val speed = player?.currentSpeed ?: 1.0f
-        tvVoiceSpeed.text = "$voice • ${String.format("%.2fx", speed)}"
+        val prefs = getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+        val voiceId = player?.currentVoice ?: prefs.getString(KEY_VOICE, KokoroTtsService.DEFAULT_VOICE) ?: KokoroTtsService.DEFAULT_VOICE
+        val speed = player?.currentSpeed ?: prefs.getFloat(KEY_SPEED, 1.0f)
+        val profile = SpeakerProfile.findById(voiceId)
+        val label = if (profile != null) "${profile.name} (${profile.tone})" else voiceId
+        tvVoiceSpeed.text = "$label • ${String.format("%.2fx", speed)}"
     }
 
     private fun showTableOfContents() {
@@ -649,10 +664,16 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         val spVoice = dialogView.findViewById<android.widget.Spinner>(R.id.dialogVoiceSpinner)
         val spSpeed = dialogView.findViewById<android.widget.Spinner>(R.id.dialogSpeedSpinner)
 
-        val voices = arrayOf("af_heart", "am_adam")
-        val voiceAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voices)
+        val availableVoiceIds = voiceLoader.getAvailableVoices()
+        val sortedProfiles = SpeakerProfile.PROFILES.filter { availableVoiceIds.contains(it.id) }
+        val remainingIds = availableVoiceIds.filter { id -> sortedProfiles.none { it.id == id } }
+        val voiceList = sortedProfiles.map { it.id } + remainingIds
+        val voiceLabels = voiceList.map { id -> SpeakerProfile.getDisplayName(id) }.toTypedArray()
+
+        val voiceAdapter = android.widget.ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, voiceLabels)
         spVoice.adapter = voiceAdapter
-        spVoice.setSelection(voices.indexOf(p.currentVoice).coerceAtLeast(0))
+        val initialVoiceIndex = voiceList.indexOf(p.currentVoice).coerceAtLeast(0)
+        spVoice.setSelection(initialVoiceIndex)
 
         val speeds = arrayOf(0.75f, 1.0f, 1.25f, 1.5f)
         val speedLabels = arrayOf("0.75x (Slow)", "1.0x (Normal)", "1.25x (Fast)", "1.5x (Very Fast)")
@@ -665,11 +686,18 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             .setTitle("Reading Voice & Speed")
             .setView(dialogView)
             .setPositiveButton("Apply") { _, _ ->
-                val selectedVoice = voices[spVoice.selectedItemPosition]
+                val selectedVoice = voiceList[spVoice.selectedItemPosition]
                 val selectedSpeed = speeds[spSpeed.selectedItemPosition]
 
                 p.currentVoice = selectedVoice
                 p.currentSpeed = selectedSpeed
+
+                getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_VOICE, selectedVoice)
+                    .putFloat(KEY_SPEED, selectedSpeed)
+                    .apply()
+
                 updateVoiceSpeedLabel()
 
                 if (p.isCurrentlyPlaying()) {
