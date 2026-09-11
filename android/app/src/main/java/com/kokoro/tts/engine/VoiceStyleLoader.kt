@@ -24,7 +24,7 @@ class VoiceStyleLoader(private val context: Context) {
     }
 
     /** Cache of loaded voice matrices: [rows][STYLE_DIM] */
-    private val voiceCache = mutableMapOf<String, Array<FloatArray>>()
+    private val voiceCache = java.util.concurrent.ConcurrentHashMap<String, Array<FloatArray>>()
 
     /**
      * Get list of available voice names from assets/voices/.
@@ -45,6 +45,7 @@ class VoiceStyleLoader(private val context: Context) {
     /**
      * Load full voice style matrix [510][256] for a given voice name.
      */
+    @Synchronized
     fun loadVoice(name: String): Array<FloatArray> {
         voiceCache[name]?.let { return it }
 

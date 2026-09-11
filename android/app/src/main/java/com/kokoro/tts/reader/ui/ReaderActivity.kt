@@ -689,8 +689,7 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
                 val selectedVoice = voiceList[spVoice.selectedItemPosition]
                 val selectedSpeed = speeds[spSpeed.selectedItemPosition]
 
-                p.currentVoice = selectedVoice
-                p.currentSpeed = selectedSpeed
+                p.updateVoiceAndSpeed(selectedVoice, selectedSpeed)
 
                 getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
                     .edit()
@@ -699,10 +698,6 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
                     .apply()
 
                 updateVoiceSpeedLabel()
-
-                if (p.isCurrentlyPlaying()) {
-                    p.seekToSentence(p.getCurrentIndex())
-                }
             }
             .setNegativeButton("Cancel", null)
             .show()

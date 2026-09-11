@@ -53,9 +53,18 @@ class BookPlayer(
     private val isPlaying = AtomicBoolean(false)
     private val isStopped = AtomicBoolean(false)
     private val generationId = AtomicInteger(0)
+    private val seekGenerationId = AtomicInteger(0)
 
     var currentVoice: String = KokoroTtsService.DEFAULT_VOICE
     var currentSpeed: Float = 1.0f
+
+    private val trackLock = Any()
+
+    @Volatile
+    private var activeProducerThread: Thread? = null
+
+    @Volatile
+    private var activePlaybackThread: Thread? = null
 
     data class SentenceAudio(
         val speechPcm: ByteArray,
@@ -69,6 +78,7 @@ class BookPlayer(
 
     private data class AudioChunk(
         val genId: Int,
+        val seekGenId: Int,
         val sentenceIndex: Int,
         val pcm: ByteArray,
         val silencePcm: ByteArray,
@@ -78,8 +88,6 @@ class BookPlayer(
     private val audioQueue = LinkedBlockingQueue<AudioChunk>(LOOKAHEAD_QUEUE_CAPACITY)
 
     private var audioTrack: AudioTrack? = null
-    private var producerThread: Thread? = null
-    private var playbackThread: Thread? = null
 
     init {
         setupAudioTrack()
@@ -104,14 +112,16 @@ class BookPlayer(
             .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .build()
 
-        audioTrack = AudioTrack(
-            attributes,
-            format,
-            bufferSize,
-            AudioTrack.MODE_STREAM,
-            AudioManager.AUDIO_SESSION_ID_GENERATE
-        )
-        audioTrack?.play()
+        synchronized(trackLock) {
+            audioTrack = AudioTrack(
+                attributes,
+                format,
+                bufferSize,
+                AudioTrack.MODE_STREAM,
+                AudioManager.AUDIO_SESSION_ID_GENERATE
+            )
+            audioTrack?.play()
+        }
     }
 
     fun setSentences(newSentences: List<SentenceItem>, startIndex: Int = 0) {
@@ -166,10 +176,16 @@ class BookPlayer(
             listener?.onBuffering(true)
         }
 
-        if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
-            setupAudioTrack()
+        synchronized(trackLock) {
+            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+                setupAudioTrack()
+            }
+            try {
+                audioTrack?.play()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting AudioTrack playback", e)
+            }
         }
-        audioTrack?.play()
 
         startThreads()
     }
@@ -178,11 +194,52 @@ class BookPlayer(
         if (!isPlaying.get()) return
         isPlaying.set(false)
         targetSentenceIndex.set(currentSentenceIndex.get())
-        audioTrack?.pause()
-        audioTrack?.flush()
+        synchronized(trackLock) {
+            try {
+                audioTrack?.pause()
+                audioTrack?.flush()
+            } catch (e: Exception) {
+                Log.e(TAG, "AudioTrack pause error", e)
+            }
+        }
         clearQueue()
+        stopThreads()
         listener?.onBuffering(false)
         listener?.onPlaybackStateChanged(false)
+    }
+
+    /**
+     * Seamlessly updates voice and speed settings during active reading.
+     *
+     * If currently playing:
+     * 1. The sentence currently speaking to the listener finishes naturally without stutter or cutoff.
+     * 2. The lookahead queue of upcoming sentences (which had old voice/speed) is purged.
+     * 3. Target synthesis index moves to the NEXT sentence (currentIndex + 1).
+     * 4. The synthesizer immediately generates upcoming audio using the new voice and speed.
+     * This avoids repeating the current sentence from the start and avoids pause/play stalls.
+     */
+    fun updateVoiceAndSpeed(newVoice: String, newSpeed: Float) {
+        val voiceChanged = currentVoice != newVoice
+        val speedChanged = kotlin.math.abs(currentSpeed - newSpeed) > 0.01f
+        if (!voiceChanged && !speedChanged) return
+
+        currentVoice = newVoice
+        currentSpeed = newSpeed
+
+        if (!isPlaying.get()) {
+            clearQueue()
+            preWarmSentence(currentSentenceIndex.get())
+            return
+        }
+
+        val nextIndex = currentSentenceIndex.get() + 1
+        targetSentenceIndex.set(nextIndex)
+
+        val newGen = generationId.incrementAndGet()
+        clearQueue()
+
+        Log.i(TAG, "Seamless voice switch -> $newVoice @ ${"%.2f".format(newSpeed)}x. Current sentence ${currentSentenceIndex.get()} finishing, next sentence $nextIndex queuing with new voice (gen=$newGen).")
+        preWarmSentence(nextIndex)
     }
 
     fun seekToSentence(index: Int) {
@@ -190,7 +247,8 @@ class BookPlayer(
         targetSentenceIndex.set(clamped)
         currentSentenceIndex.set(clamped)
 
-        // Increment generation ID to invalidate any queued audio from previous position
+        // Increment BOTH seekGenerationId (aborts active chunk) and generationId (clears pipeline)
+        seekGenerationId.incrementAndGet()
         val newGenId = generationId.incrementAndGet()
         clearQueue()
 
@@ -200,13 +258,21 @@ class BookPlayer(
             listener?.onBuffering(true)
         }
 
-        audioTrack?.pause()
-        audioTrack?.flush()
+        synchronized(trackLock) {
+            try {
+                audioTrack?.pause()
+                audioTrack?.flush()
+                if (isPlaying.get()) {
+                    audioTrack?.play()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "AudioTrack seek error", e)
+            }
+        }
+
         if (isPlaying.get()) {
-            audioTrack?.play()
-            // If producer or playback thread died, restart immediately
-            if (producerThread == null || !producerThread!!.isAlive ||
-                playbackThread == null || !playbackThread!!.isAlive) {
+            if (activeProducerThread == null || !activeProducerThread!!.isAlive ||
+                activePlaybackThread == null || !activePlaybackThread!!.isAlive) {
                 startThreads()
             }
         }
@@ -235,18 +301,37 @@ class BookPlayer(
         audioQueue.clear()
     }
 
+    private fun stopThreads() {
+        val oldProducer = activeProducerThread
+        val oldPlayback = activePlaybackThread
+        activeProducerThread = null
+        activePlaybackThread = null
+
+        oldProducer?.interrupt()
+        oldPlayback?.interrupt()
+        clearQueue()
+
+        try {
+            oldProducer?.join(150)
+            oldPlayback?.join(150)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
     private fun startThreads() {
         stopThreads()
 
         // 1. Synthesizer Thread (Producer) - runs ahead and fills queue
-        producerThread = Thread({
+        val producer = Thread({
+            val myThread = Thread.currentThread()
             var synthIndex = targetSentenceIndex.get()
             var myGenId = generationId.get()
 
-            while (isPlaying.get() && !isStopped.get()) {
+            while (activeProducerThread === myThread && isPlaying.get() && !isStopped.get() && !myThread.isInterrupted) {
                 val currentGen = generationId.get()
                 if (currentGen != myGenId) {
-                    // User jumped to a different sentence: update cursor and continue without dying
+                    // Generation changed: update cursor and continue without leaking threads
                     myGenId = currentGen
                     synthIndex = targetSentenceIndex.get()
                     continue
@@ -257,6 +342,7 @@ class BookPlayer(
                     try {
                         Thread.sleep(100)
                     } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
                         break
                     }
                     continue
@@ -280,32 +366,46 @@ class BookPlayer(
                     } else null
                 }
 
-                // Check if generation changed while synthesis was running
+                // Check if thread was invalidated or generation changed while synthesis was running
+                if (activeProducerThread !== myThread || !isPlaying.get() || isStopped.get() || myThread.isInterrupted) {
+                    break
+                }
                 if (generationId.get() != myGenId) {
                     continue
                 }
 
                 if (sentenceAudio != null) {
-                    val chunk = AudioChunk(myGenId, synthIndex, sentenceAudio.speechPcm, sentenceAudio.silencePcm, isLast)
+                    val chunk = AudioChunk(
+                        genId = myGenId,
+                        seekGenId = seekGenerationId.get(),
+                        sentenceIndex = synthIndex,
+                        pcm = sentenceAudio.speechPcm,
+                        silencePcm = sentenceAudio.silencePcm,
+                        isLast = isLast
+                    )
                     Log.i(TAG, "Director: sentence $synthIndex | role=${performance.role} | speed=${"%.2f".format(performance.effectiveSpeed)} (base=$currentSpeed) | silence=${performance.postSilenceMs}ms | pEnd=${sentence.isParagraphEnd}")
                     var offered = false
-                    while (isPlaying.get() && generationId.get() == myGenId && !offered) {
+                    while (activeProducerThread === myThread && isPlaying.get() && generationId.get() == myGenId && !offered) {
                         try {
                             offered = audioQueue.offer(chunk, 100, TimeUnit.MILLISECONDS)
                         } catch (e: InterruptedException) {
+                            Thread.currentThread().interrupt()
                             break
                         }
                     }
                 }
                 synthIndex++
             }
-        }, "BookPlayer-Synthesizer").apply { start() }
+        }, "BookPlayer-Synthesizer")
 
         // 2. Playback Thread (Consumer) - streams PCM and directed silence to AudioTrack continuously
-        playbackThread = Thread({
+        val playback = Thread({
+            val myThread = Thread.currentThread()
             var activeGenId = generationId.get()
+            var lastPlayedSentenceIndex = -1
+            var lastPlayedGenId = -1
 
-            while (isPlaying.get() && !isStopped.get()) {
+            while (activePlaybackThread === myThread && isPlaying.get() && !isStopped.get() && !myThread.isInterrupted) {
                 val currentGen = generationId.get()
                 if (currentGen != activeGenId) {
                     activeGenId = currentGen
@@ -315,17 +415,30 @@ class BookPlayer(
                 val chunk = try {
                     audioQueue.poll(200, TimeUnit.MILLISECONDS)
                 } catch (e: InterruptedException) {
-                    null
+                    Thread.currentThread().interrupt()
+                    break
                 }
 
                 if (chunk == null) {
                     continue
                 }
 
+                if (activePlaybackThread !== myThread || !isPlaying.get() || isStopped.get()) {
+                    break
+                }
+
                 if (chunk.genId != generationId.get()) {
-                    // Stale chunk from prior seek, discard
+                    // Stale chunk from prior seek or voice switch, discard
                     continue
                 }
+
+                // Deduplication safeguard: NEVER play the same sentence twice in the same generation
+                if (chunk.sentenceIndex == lastPlayedSentenceIndex && chunk.genId == lastPlayedGenId) {
+                    Log.w(TAG, "Discarding duplicate chunk for sentence ${chunk.sentenceIndex}")
+                    continue
+                }
+                lastPlayedSentenceIndex = chunk.sentenceIndex
+                lastPlayedGenId = chunk.genId
 
                 currentSentenceIndex.set(chunk.sentenceIndex)
                 targetSentenceIndex.set(chunk.sentenceIndex)
@@ -338,10 +451,15 @@ class BookPlayer(
                 var offset = 0
                 val data = chunk.pcm
                 val chunkSize = 8192
+                val currentSeekGen = chunk.seekGenId
 
-                while (offset < data.size && isPlaying.get() && chunk.genId == generationId.get()) {
+                while (offset < data.size && isPlaying.get() && currentSeekGen == seekGenerationId.get() && activePlaybackThread === myThread) {
                     val count = minOf(chunkSize, data.size - offset)
-                    val written = track.write(data, offset, count)
+                    val written = synchronized(trackLock) {
+                        if (isPlaying.get() && activePlaybackThread === myThread) {
+                            track.write(data, offset, count)
+                        } else -1
+                    }
                     if (written < 0) {
                         Log.e(TAG, "AudioTrack write error: $written")
                         break
@@ -350,24 +468,33 @@ class BookPlayer(
                 }
 
                 // 2. Stream hardware PCM silence buffer for natural cadence
-                if (chunk.silencePcm.isNotEmpty() && isPlaying.get() && chunk.genId == generationId.get()) {
+                if (chunk.silencePcm.isNotEmpty() && isPlaying.get() && currentSeekGen == seekGenerationId.get() && activePlaybackThread === myThread) {
                     var silenceOffset = 0
                     val silenceData = chunk.silencePcm
-                    while (silenceOffset < silenceData.size && isPlaying.get() && chunk.genId == generationId.get()) {
+                    while (silenceOffset < silenceData.size && isPlaying.get() && currentSeekGen == seekGenerationId.get() && activePlaybackThread === myThread) {
                         val count = minOf(chunkSize, silenceData.size - silenceOffset)
-                        val written = track.write(silenceData, silenceOffset, count)
+                        val written = synchronized(trackLock) {
+                            if (isPlaying.get() && activePlaybackThread === myThread) {
+                                track.write(silenceData, silenceOffset, count)
+                            } else -1
+                        }
                         if (written < 0) break
                         silenceOffset += count
                     }
                 }
 
                 // 3. Handle end of chapter
-                if (chunk.isLast && isPlaying.get() && chunk.genId == generationId.get()) {
+                if (chunk.isLast && isPlaying.get() && currentSeekGen == seekGenerationId.get() && activePlaybackThread === myThread) {
                     pause()
                     listener?.onChapterFinished(chunk.sentenceIndex)
                 }
             }
-        }, "BookPlayer-Playback").apply { start() }
+        }, "BookPlayer-Playback")
+
+        activeProducerThread = producer
+        activePlaybackThread = playback
+        producer.start()
+        playback.start()
     }
 
     private fun synthesize(text: String, speed: Float): ByteArray? {
@@ -386,19 +513,18 @@ class BookPlayer(
         }
     }
 
-    private fun stopThreads() {
-        producerThread?.interrupt()
-        playbackThread?.interrupt()
-        producerThread = null
-        playbackThread = null
-    }
-
     fun release() {
         isStopped.set(true)
         pause()
         stopThreads()
-        audioTrack?.stop()
-        audioTrack?.release()
-        audioTrack = null
+        synchronized(trackLock) {
+            try {
+                audioTrack?.stop()
+                audioTrack?.release()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error releasing AudioTrack", e)
+            }
+            audioTrack = null
+        }
     }
 }
