@@ -89,44 +89,121 @@ Java_com_kokoro_tts_engine_EspeakBridge_nativeTextToPhonemes(
         return fragResult;
     };
 
-    // Split at clause-boundary punctuation (, ; :) followed by whitespace.
-    // Phonemize each fragment separately and rejoin with the punctuation,
-    // so the Kokoro model sees commas/semicolons/colons and produces
-    // natural pauses at clause boundaries.
+    // Helper to detect punctuation delimiters and return byte length (0 if none, 1 for ASCII, 3 for UTF-8)
+    auto matchDelimiter = [](const std::string &str, size_t pos, std::string &outDelim) -> int {
+        if (pos >= str.size()) return 0;
+        unsigned char c = static_cast<unsigned char>(str[pos]);
+
+        // Check 3-byte UTF-8 sequences (0xE2 0x80 ...)
+        if (c == 0xE2 && pos + 2 < str.size() && static_cast<unsigned char>(str[pos + 1]) == 0x80) {
+            unsigned char c3 = static_cast<unsigned char>(str[pos + 2]);
+            if (c3 == 0x94) { // U+2014 Em-dash '—'
+                outDelim = "—";
+                return 3;
+            }
+            if (c3 == 0x93) { // U+2013 En-dash '–'
+                outDelim = "—";
+                return 3;
+            }
+            if (c3 == 0xA6) { // U+2026 Ellipsis '…'
+                outDelim = "…";
+                return 3;
+            }
+            if (c3 == 0x9C || c3 == 0x9D) { // U+201C / U+201D Curly quotes “ ”
+                outDelim = "\"";
+                return 3;
+            }
+        }
+
+        // ASCII delimiters: ( ) , ; : ! ? "
+        if (c == '(' || c == ')' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?' || c == '"') {
+            outDelim = std::string(1, static_cast<char>(c));
+            return 1;
+        }
+
+        // Period '.' (guard against decimal points e.g. 3.14)
+        if (c == '.') {
+            if (pos + 1 < str.size() && isdigit(static_cast<unsigned char>(str[pos + 1]))) {
+                return 0; // Number decimal, keep with digits
+            }
+            outDelim = ".";
+            return 1;
+        }
+
+        return 0;
+    };
+
+    // Split at clause/phrase delimiters (em-dash, parentheses, comma, semicolon, colon, ellipsis, sentence enders).
+    // Phonemize each text fragment separately and rejoin with the punctuation tokens,
+    // so the Kokoro model receives em-dashes (token 9), parentheses (tokens 12 & 13),
+    // and punctuation tokens to steer prosody, pauses, and cadence.
     std::string result;
     size_t start = 0;
+    size_t i = 0;
 
-    for (size_t i = 0; i < input.size(); i++) {
-        char c = input[i];
-        if ((c == ',' || c == ';' || c == ':') &&
-            i + 1 < input.size() && input[i + 1] == ' ') {
+    while (i < input.size()) {
+        std::string delim;
+        int delimLen = matchDelimiter(input, i, delim);
+        if (delimLen > 0) {
             // Phonemize the fragment before this delimiter
             if (i > start) {
-                std::string frag = input.substr(start, i - start);
-                std::string ph = phonemizeFragment(frag.c_str());
-                if (!ph.empty()) {
-                    if (!result.empty()) result += ' ';
-                    result += ph;
+                size_t fragStart = start;
+                while (fragStart < i && isspace(static_cast<unsigned char>(input[fragStart]))) fragStart++;
+                size_t fragEnd = i;
+                while (fragEnd > fragStart && isspace(static_cast<unsigned char>(input[fragEnd - 1]))) fragEnd--;
+
+                if (fragEnd > fragStart) {
+                    std::string frag = input.substr(fragStart, fragEnd - fragStart);
+                    std::string ph = phonemizeFragment(frag.c_str());
+                    if (!ph.empty()) {
+                        if (!result.empty() && result.back() != '(' && result.back() != ' ') {
+                            result += ' ';
+                        }
+                        result += ph;
+                    }
                 }
             }
-            // Insert the clause-boundary punctuation
-            result += c;
-            // Advance past the delimiter and trailing whitespace
-            i++;
-            while (i + 1 < input.size() && input[i + 1] == ' ') {
-                i++;
+
+            // Append delimiter
+            if (delim == "(") {
+                if (!result.empty() && result.back() != ' ') {
+                    result += ' ';
+                }
+                result += "(";
+            } else if (delim == ")") {
+                result += ")";
+            } else if (delim == "—") {
+                if (!result.empty() && result.back() != ' ') {
+                    result += ' ';
+                }
+                result += "—";
+            } else {
+                result += delim;
             }
-            start = i + 1;
+
+            i += delimLen;
+            start = i;
+        } else {
+            i++;
         }
     }
 
     // Phonemize any remaining text after the last delimiter
     if (start < input.size()) {
-        std::string frag = input.substr(start);
-        std::string ph = phonemizeFragment(frag.c_str());
-        if (!ph.empty()) {
-            if (!result.empty()) result += ' ';
-            result += ph;
+        size_t fragStart = start;
+        while (fragStart < input.size() && isspace(static_cast<unsigned char>(input[fragStart]))) fragStart++;
+        size_t fragEnd = input.size();
+        while (fragEnd > fragStart && isspace(static_cast<unsigned char>(input[fragEnd - 1]))) fragEnd--;
+
+        if (fragEnd > fragStart) {
+            std::string frag = input.substr(fragStart, fragEnd - fragStart);
+            std::string ph = phonemizeFragment(frag.c_str());
+            if (!ph.empty()) {
+                if (!result.empty() && result.back() != '(' && result.back() != ' ') {
+                    result += ' ';
+                }
+                result += ph;
+            }
         }
     }
 

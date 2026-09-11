@@ -76,4 +76,35 @@ class VoiceStyleLoader(private val context: Context) {
         val index = (tokenCount.coerceIn(1, MAX_ROWS)) - 1
         return matrix[index]
     }
+
+    /**
+     * Slices and blends the 256-dimensional style vector between a base voice and an emotional donor voice.
+     * blendWeight is clamped to [0.0, 1.0].
+     * If donorVoice is null, identical to baseVoice, or blendWeight <= 0.0f, returns base style vector directly with 0 overhead.
+     */
+    fun getBlendedStyleVector(
+        baseVoice: String,
+        donorVoice: String?,
+        blendWeight: Float,
+        tokenCount: Int
+    ): FloatArray {
+        val baseVec = getStyleVector(baseVoice, tokenCount)
+        if (donorVoice == null || donorVoice == baseVoice || blendWeight <= 0.0f) {
+            return baseVec
+        }
+        val clampedWeight = blendWeight.coerceIn(0.0f, 1.0f)
+        val donorVec = try {
+            getStyleVector(donorVoice, tokenCount)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load donor voice '$donorVoice', falling back to base '$baseVoice'", e)
+            return baseVec
+        }
+
+        val blended = FloatArray(STYLE_DIM)
+        val baseWeight = 1.0f - clampedWeight
+        for (i in 0 until STYLE_DIM) {
+            blended[i] = baseWeight * baseVec[i] + clampedWeight * donorVec[i]
+        }
+        return blended
+    }
 }

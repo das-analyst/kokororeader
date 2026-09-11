@@ -148,12 +148,12 @@ class BookPlayer(
             val isLast = index == sentences.size - 1
             val cacheKey = getCacheKey(sentence)
             if (audioCache.get(cacheKey) == null) {
-                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed)
-                val pcm = synthesize(sentence.text, performance.effectiveSpeed)
+                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed, currentVoice)
+                val pcm = synthesize(sentence.text, performance)
                 if (pcm != null && pcm.isNotEmpty()) {
                     val silencePcm = SpeechDirector.generateSilencePcm(performance.postSilenceMs, SAMPLE_RATE)
                     audioCache.put(cacheKey, SentenceAudio(pcm, silencePcm))
-                    Log.i(TAG, "Pre-warmed sentence $index into cache (${pcm.size} bytes speech, ${silencePcm.size} bytes silence, role=${performance.role})")
+                    Log.i(TAG, "Pre-warmed sentence $index into cache (${pcm.size} bytes speech, ${silencePcm.size} bytes silence, role=${performance.role}, donor=${performance.donorVoice})")
                 }
             }
         }, "BookPlayer-PreWarmer").start()
@@ -350,14 +350,14 @@ class BookPlayer(
 
                 val sentence = sentences[synthIndex]
                 val isLast = synthIndex == sentences.size - 1
-                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed)
+                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed, currentVoice)
                 val cacheKey = getCacheKey(sentence)
                 val cached = audioCache.get(cacheKey)
 
                 val sentenceAudio = if (cached != null) {
                     cached
                 } else {
-                    val pcm = synthesize(sentence.text, performance.effectiveSpeed)
+                    val pcm = synthesize(sentence.text, performance)
                     if (pcm != null && pcm.isNotEmpty()) {
                         val silence = SpeechDirector.generateSilencePcm(performance.postSilenceMs, SAMPLE_RATE)
                         val sa = SentenceAudio(pcm, silence)
@@ -383,7 +383,8 @@ class BookPlayer(
                         silencePcm = sentenceAudio.silencePcm,
                         isLast = isLast
                     )
-                    Log.i(TAG, "Director: sentence $synthIndex | role=${performance.role} | speed=${"%.2f".format(performance.effectiveSpeed)} (base=$currentSpeed) | silence=${performance.postSilenceMs}ms | pEnd=${sentence.isParagraphEnd}")
+                    val donorTag = if (performance.donorVoice != null) " | donor=${performance.donorVoice}(${"%.2f".format(performance.blendWeight)})" else ""
+                    Log.i(TAG, "Director: sentence $synthIndex | role=${performance.role} | speed=${"%.2f".format(performance.effectiveSpeed)} (base=$currentSpeed) | silence=${performance.postSilenceMs}ms$donorTag | pEnd=${sentence.isParagraphEnd}")
                     var offered = false
                     while (activeProducerThread === myThread && isPlaying.get() && generationId.get() == myGenId && !offered) {
                         try {
@@ -497,7 +498,7 @@ class BookPlayer(
         playback.start()
     }
 
-    private fun synthesize(text: String, speed: Float): ByteArray? {
+    private fun synthesize(text: String, performance: SpeechDirector.DirectedPerformance): ByteArray? {
         return try {
             val phonemes = phonemeConverter.convertTextToPhonemes(text)
             if (phonemes.isBlank()) return null
@@ -505,8 +506,13 @@ class BookPlayer(
             val tokens = tokenizer.tokenizeWithPadding(phonemes)
             if (tokens.size <= 2) return null
 
-            val styleVector = voiceLoader.getStyleVector(currentVoice, tokens.size - 2)
-            kokoroEngine.synthesizeToPcm(tokens, styleVector, speed)
+            val styleVector = voiceLoader.getBlendedStyleVector(
+                currentVoice,
+                performance.donorVoice,
+                performance.blendWeight,
+                tokens.size - 2
+            )
+            kokoroEngine.synthesizeToPcm(tokens, styleVector, performance.effectiveSpeed)
         } catch (e: Exception) {
             Log.e(TAG, "Synthesis error for: '$text'", e)
             null

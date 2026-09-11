@@ -75,10 +75,25 @@ class TextNormalizerTest {
     fun testArtifactCleaner() {
         assertEquals("find flower", ArtifactCleaner.clean("ﬁnd ﬂower"))
         assertEquals("The fact was known.", ArtifactCleaner.clean("The fact was known.[1]"))
+        assertEquals("The fact was known.", ArtifactCleaner.clean("The fact was known.[iv]"))
+        assertEquals("The fact was known.", ArtifactCleaner.clean("The fact was known.[*]"))
         assertEquals("information", ArtifactCleaner.clean("infor-\nmation"))
         assertEquals("\"quoted\"", ArtifactCleaner.clean("“quoted”"))
         assertEquals("Mr. C. M. Park", ArtifactCleaner.clean("Mr.C.M. Park"))
         assertEquals("J. R. R. Tolkien", ArtifactCleaner.clean("J.R.R. Tolkien"))
+
+        // Em-dash preservation and ASCII double/triple-hyphen conversion
+        assertEquals("she paused — then smiled", ArtifactCleaner.clean("she paused — then smiled"))
+        assertEquals("she paused — then smiled", ArtifactCleaner.clean("she paused--then smiled"))
+        assertEquals("she paused — then smiled", ArtifactCleaner.clean("she paused --- then smiled"))
+        assertEquals("she paused — then smiled", ArtifactCleaner.clean("she paused – then smiled"))
+
+        // Brackets around phrases converted to parentheses for TTS parenthetical tokens
+        assertEquals("she paused (quietly) then smiled", ArtifactCleaner.clean("she paused [quietly] then smiled"))
+        assertEquals("she arrived (with a warm smile) on Tuesday", ArtifactCleaner.clean("she arrived [with a warm smile] on Tuesday"))
+
+        // Ellipsis normalization
+        assertEquals("she waited… and smiled", ArtifactCleaner.clean("she waited... and smiled"))
     }
 
     @Test

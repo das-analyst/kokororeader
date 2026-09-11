@@ -12,7 +12,7 @@ class SpeechDirectorTest {
     fun testDialogueClassificationAndCadence() {
         val standardDialogue = SentenceItem(
             index = 0,
-            text = "\"We have to go back,\" whispered Jack.",
+            text = "\"We have to go back,\" said Jack.",
             chapterIndex = 0,
             isParagraphEnd = false,
             isDialogue = true
@@ -30,7 +30,7 @@ class SpeechDirectorTest {
     fun testDialogueExclamationCadence() {
         val exclamationDialogue = SentenceItem(
             index = 0,
-            text = "\"We have to go back!\" shouted Jack.",
+            text = "\"We have to go back!\" insisted Jack.",
             chapterIndex = 0,
             isParagraphEnd = false,
             isDialogue = true
@@ -123,5 +123,102 @@ class SpeechDirectorTest {
         for (b in pcm) {
             assertEquals(0.toByte(), b)
         }
+    }
+
+    @Test
+    fun testWhisperDialogueEmotionalProsody() {
+        val whisperSentence = SentenceItem(
+            index = 0,
+            text = "\"Stay back,\" she whispered into the darkness.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = true
+        )
+
+        // Female base voice (e.g. af_heart) -> blends af_nicole
+        val directedFemale = SpeechDirector.direct(whisperSentence, baseVoice = "af_heart")
+        assertEquals(SpeechDirector.SentenceRole.DIALOGUE, directedFemale.role)
+        assertEquals("af_nicole", directedFemale.donorVoice)
+        assertEquals(0.50f, directedFemale.blendWeight, 0.001f)
+        assertEquals(0.90f, directedFemale.effectiveSpeed, 0.001f)
+        assertEquals(550L, directedFemale.postSilenceMs)
+
+        // Male base voice (e.g. am_onyx) -> blends am_michael
+        val directedMale = SpeechDirector.direct(whisperSentence, baseVoice = "am_onyx")
+        assertEquals("am_michael", directedMale.donorVoice)
+        assertEquals(0.50f, directedMale.blendWeight, 0.001f)
+        assertEquals(0.90f, directedMale.effectiveSpeed, 0.001f)
+    }
+
+    @Test
+    fun testShoutingDialogueEmotionalProsody() {
+        val shoutSentence = SentenceItem(
+            index = 0,
+            text = "\"Thomas, answer me!\" she called frantically.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = true
+        )
+
+        // Female base voice -> blends af_bella with urgent tempo (1.14x)
+        val directedFemale = SpeechDirector.direct(shoutSentence, baseVoice = "af_heart")
+        assertEquals(SpeechDirector.SentenceRole.DIALOGUE, directedFemale.role)
+        assertEquals("af_bella", directedFemale.donorVoice)
+        assertEquals(0.45f, directedFemale.blendWeight, 0.001f)
+        assertEquals(1.14f, directedFemale.effectiveSpeed, 0.001f)
+
+        // Male base voice -> blends am_adam
+        val directedMale = SpeechDirector.direct(shoutSentence, baseVoice = "am_onyx")
+        assertEquals("am_adam", directedMale.donorVoice)
+        assertEquals(0.45f, directedMale.blendWeight, 0.001f)
+        assertEquals(1.14f, directedMale.effectiveSpeed, 0.001f)
+    }
+
+    @Test
+    fun testSolemnCadenceEmotionalProsody() {
+        val solemnSentence = SentenceItem(
+            index = 0,
+            text = "There was no answer, only the cold wind sighing mournfully.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = false
+        )
+
+        val directed = SpeechDirector.direct(solemnSentence, baseVoice = "af_heart")
+        assertEquals(SpeechDirector.SentenceRole.NARRATION, directed.role)
+        assertEquals("af_sarah", directed.donorVoice)
+        assertEquals(0.35f, directed.blendWeight, 0.001f)
+        assertEquals(650L, directed.postSilenceMs)
+    }
+
+    @Test
+    fun testInterruptedUtteranceCadence() {
+        val interruptedSentence = SentenceItem(
+            index = 0,
+            text = "\"Wait, I was just going to—\"",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = true
+        )
+
+        val directed = SpeechDirector.direct(interruptedSentence, baseVoice = "af_heart")
+        // Interrupted speech abruptly cuts off with 200ms post-silence
+        assertEquals(SpeechDirector.SILENCE_INTERRUPTED_MS, directed.postSilenceMs)
+        assertEquals(200L, directed.postSilenceMs)
+    }
+
+    @Test
+    fun testParentheticalAsideNuance() {
+        val asideSentence = SentenceItem(
+            index = 0,
+            text = "She had never seen him (though she knew his reputation) in such spirits.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = false
+        )
+
+        val directed = SpeechDirector.direct(asideSentence, baseVoice = "af_heart")
+        // Nuanced pacing (0.97x aside multiplier)
+        assertEquals(0.97f, directed.effectiveSpeed, 0.001f)
     }
 }

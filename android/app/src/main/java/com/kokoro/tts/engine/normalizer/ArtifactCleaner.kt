@@ -28,17 +28,29 @@ object ArtifactCleaner {
             t = t.replace(ligature, replacement)
         }
 
-        // 3. Remove footnote citations like [1], [24], [a], [iv]
-        t = t.replace(Regex("\\[(?:\\d+|[a-zA-Z]|[ivxIVX]+)\\]"), "")
+        // 3. Remove footnote citations like [1], [24], [a], [iv] (numeric or citation markers only)
+        t = t.replace(Regex("\\[(?:\\d{1,4}|[ivxIVX]{1,4}|[a-c]|\\*|†|‡)\\]"), "")
         t = t.replace(Regex("(?<=\\w)[*†‡]"), "")
 
-        // 4. Normalize curly quotes and em dashes
+        // Map remaining square brackets around words/phrases to parentheses for native TTS parenthetical tokens
+        t = t.replace('[', '(').replace(']', ')')
+
+        // 4. Normalize curly quotes, em-dashes, and ellipses
         t = t.replace('“', '"')
             .replace('”', '"')
             .replace('‘', '\'')
             .replace('’', '\'')
-            .replace('—', '-')
-            .replace('–', '-')
+
+        // Normalize ASCII double/triple hyphens to true Unicode em-dash
+        t = t.replace(Regex("(?<=\\S)\\s*--+\\s*(?=\\S)"), " — ")
+        t = t.replace(Regex("--+"), " — ")
+
+        // Normalize en-dashes used as clause separators to em-dash
+        t = t.replace(Regex("\\s+–\\s+"), " — ")
+        t = t.replace(Regex("(?<=[a-zA-Z])–(?=[a-zA-Z])"), "—")
+
+        // Normalize ellipsis (... -> …)
+        t = t.replace(Regex("\\.{3,}"), "…")
 
         // 5. Clean up name initial spacing and missing spaces after titles
         // E.g. "Mr.Park" -> "Mr. Park", "Mr.C.M." -> "Mr. C. M."
