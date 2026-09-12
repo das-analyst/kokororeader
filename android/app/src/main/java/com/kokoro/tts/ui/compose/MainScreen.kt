@@ -92,13 +92,13 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 // App Title & Tagline
                 Text(
-                    text = "📖 Kokoro AI Ebook Reader",
+                    text = "📖 Kokoro Reader",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "On-device neural TTS with 0 ms gapless lookahead reading.",
+                    text = "Pinto Beans Labs • 100% On-device neural AI voice & ebook reader",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)

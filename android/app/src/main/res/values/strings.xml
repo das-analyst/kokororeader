@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Kokoro TTS</string>
-    <string name="tts_engine_name">Kokoro Natural AI Voice</string>
-    <string name="title_settings">Kokoro TTS Configuration</string>
+    <string name="app_name">Kokoro Reader</string>
+    <string name="tts_engine_name">Kokoro Reader (Pinto Beans Labs)</string>
+    <string name="title_settings">Kokoro Reader Settings</string>
     <string name="label_voice">Preferred Voice:</string>
     <string name="btn_test">Test Voice Sample</string>
     <string name="btn_open_settings">Open System TTS Settings</string>
-    <string name="sample_text">Hello! This is a preview of the on-device Kokoro neural text to speech engine. Ready to read your favorite ebooks in natural voice.</string>
+    <string name="sample_text">Hello! This is a preview of Kokoro Reader by Pinto Beans Labs. High-fidelity on-device neural voices ready to read your favorite ebooks and documents.</string>
 </resources>
