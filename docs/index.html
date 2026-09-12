@@ -5,21 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kokoro Reader - 100% Offline AI Audiobook & Ebook Reader | Pinto Beans Labs</title>
     <meta name="description" content="Official website and Privacy Policy for Kokoro Reader by Pinto Beans Labs. 100% offline, on-device AI neural voice text-to-speech and audiobook reader for Android.">
-    <link rel="canonical" href="https://pintobeanslabs.github.io/kokororeader/">
+    <link rel="canonical" href="https://das-analyst.github.io/kokororeader/">
+    <link rel="icon" type="image/png" href="assets/icon.png">
+
+    <!-- Open Graph / Social Previews -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://das-analyst.github.io/kokororeader/">
+    <meta property="og:title" content="Kokoro Reader - 100% Offline AI Audiobook & Ebook Reader">
+    <meta property="og:description" content="Turn any ebook or document into a studio-quality audiobook on Android. 100% offline, zero ads, zero data collected.">
+    <meta property="og:image" content="https://das-analyst.github.io/kokororeader/assets/feature_graphic.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Kokoro Reader - 100% Offline AI Audiobook & Ebook Reader">
+    <meta name="twitter:description" content="Turn any ebook or document into a studio-quality audiobook on Android. 100% offline, zero ads, zero data collected.">
+    <meta name="twitter:image" content="https://das-analyst.github.io/kokororeader/assets/feature_graphic.png">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-primary: #0d1117;
-            --bg-secondary: #161b22;
-            --bg-card: #1c2128;
+            --bg-primary: #0a0d14;
+            --bg-secondary: #121620;
+            --bg-card: #181d2a;
             --text-primary: #f0f6fc;
-            --text-secondary: #8b949e;
+            --text-secondary: #94a3b8;
             --accent-coral: #ff7556;
             --accent-cyan: #38bdf8;
             --accent-amber: #ffa726;
-            --border-color: #30363d;
+            --border-color: #242c3d;
             --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
 
@@ -27,6 +40,10 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
         }
 
         body {
@@ -38,17 +55,86 @@
             margin: 0;
         }
 
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 40px 24px 80px;
+        /* Nav */
+        nav {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 13, 20, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            z-index: 100;
+            padding: 16px 24px;
         }
 
-        /* Header / Hero */
-        header {
+        .nav-inner {
+            max-width: 1060px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.15rem;
+            color: #fff;
+            text-decoration: none;
+        }
+
+        .nav-brand img {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: color 0.2s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-cyan);
+        }
+
+        .btn-github {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent-cyan) !important;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            padding: 6px 14px;
+            border-radius: 8px;
+        }
+
+        .container {
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 20px 24px 80px;
+        }
+
+        /* Hero */
+        .hero {
             text-align: center;
-            padding: 60px 0 40px;
-            border-bottom: 1px solid var(--border-color);
+            padding: 50px 0 30px;
+        }
+
+        .hero-icon {
+            width: 110px;
+            height: 110px;
+            border-radius: 26px;
+            box-shadow: 0 12px 36px rgba(255, 117, 86, 0.25), 0 4px 16px rgba(56, 189, 248, 0.2);
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .badge {
@@ -59,84 +145,158 @@
             font-size: 0.85rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            padding: 6px 16px;
+            letter-spacing: 1.2px;
+            padding: 6px 18px;
             border-radius: 999px;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
 
         h1 {
-            font-size: 3rem;
+            font-size: 3.2rem;
             font-weight: 800;
-            letter-spacing: -1px;
-            background: linear-gradient(135deg, #ffffff 40%, var(--accent-cyan) 100%);
+            letter-spacing: -1.2px;
+            background: linear-gradient(135deg, #ffffff 30%, var(--accent-cyan) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 16px;
+            line-height: 1.15;
         }
 
         .tagline {
             font-size: 1.25rem;
             color: var(--text-secondary);
             max-width: 680px;
-            margin: 0 auto 28px;
+            margin: 0 auto 24px;
         }
 
         .brand-credit {
             font-size: 0.95rem;
             color: var(--accent-cyan);
             font-weight: 600;
+            margin-bottom: 30px;
         }
 
-        /* Feature Grid */
+        /* Banner Showcase */
+        .banner-showcase {
+            margin: 30px 0 60px;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+        }
+
+        .banner-showcase img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        /* Features */
         .features-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 20px;
-            margin: 50px 0 60px;
+            margin: 40px 0 70px;
         }
 
         .feature-card {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 24px;
+            border-radius: 18px;
+            padding: 26px;
             transition: transform 0.2s ease, border-color 0.2s ease;
         }
 
         .feature-card:hover {
-            transform: translateY(-2px);
+            transform: translateY(-3px);
             border-color: rgba(56, 189, 248, 0.4);
         }
 
         .feature-icon {
-            font-size: 1.8rem;
-            margin-bottom: 12px;
+            font-size: 2rem;
+            margin-bottom: 14px;
         }
 
         .feature-title {
-            font-size: 1.1rem;
+            font-size: 1.15rem;
             font-weight: 700;
             color: #fff;
             margin-bottom: 8px;
         }
 
         .feature-desc {
-            font-size: 0.9rem;
+            font-size: 0.92rem;
+            color: var(--text-secondary);
+            line-height: 1.55;
+        }
+
+        /* Screenshot Gallery */
+        .gallery-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .gallery-header h2 {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .gallery-header p {
             color: var(--text-secondary);
         }
 
-        /* Policy Section */
+        .screenshots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 80px;
+        }
+
+        .screenshot-item {
+            text-align: center;
+        }
+
+        .phone-frame {
+            background: #000;
+            border-radius: 28px;
+            padding: 8px;
+            border: 2px solid var(--border-color);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+            transition: transform 0.25s ease;
+        }
+
+        .phone-frame:hover {
+            transform: translateY(-6px);
+            border-color: var(--accent-cyan);
+        }
+
+        .phone-frame img {
+            width: 100%;
+            height: auto;
+            border-radius: 22px;
+            display: block;
+        }
+
+        .screenshot-caption {
+            margin-top: 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+
+        /* Privacy Policy Section */
         .policy-section {
             background-color: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 40px;
-            margin-top: 40px;
+            border-radius: 22px;
+            padding: 44px;
+            margin-top: 20px;
         }
 
         .policy-section h2 {
-            font-size: 1.8rem;
+            font-size: 1.9rem;
             font-weight: 800;
             color: #fff;
             margin-bottom: 8px;
@@ -146,10 +306,10 @@
         }
 
         .policy-meta {
-            font-size: 0.9rem;
+            font-size: 0.92rem;
             color: var(--text-secondary);
             margin-bottom: 32px;
-            padding-bottom: 16px;
+            padding-bottom: 18px;
             border-bottom: 1px solid var(--border-color);
         }
 
@@ -165,13 +325,13 @@
         }
 
         .policy-block p {
-            color: #c9d1d9;
+            color: #cbd5e1;
             margin-bottom: 12px;
         }
 
         .policy-block ul {
             list-style-position: inside;
-            color: #c9d1d9;
+            color: #cbd5e1;
             margin-left: 8px;
             margin-bottom: 12px;
         }
@@ -195,11 +355,11 @@
         /* Footer */
         footer {
             text-align: center;
-            padding: 50px 0 20px;
+            padding: 60px 0 30px;
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.88rem;
             border-top: 1px solid var(--border-color);
-            margin-top: 60px;
+            margin-top: 70px;
         }
 
         footer a {
@@ -211,45 +371,103 @@
             text-decoration: underline;
         }
 
-        @media (max-width: 640px) {
-            h1 { font-size: 2.2rem; }
+        @media (max-width: 768px) {
+            h1 { font-size: 2.3rem; }
             .policy-section { padding: 24px; }
+            .screenshots-grid { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
 </head>
 <body>
 
+<nav>
+    <div class="nav-inner">
+        <a href="#" class="nav-brand">
+            <img src="assets/icon.png" alt="Kokoro Reader Icon">
+            <span>Kokoro Reader</span>
+        </a>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#screenshots">Screenshots</a>
+            <a href="#privacy">Privacy Policy</a>
+            <a href="https://github.com/das-analyst/kokororeader" target="_blank" rel="noopener" class="btn-github">GitHub</a>
+        </div>
+    </div>
+</nav>
+
 <div class="container">
-    <header>
+    <!-- Hero -->
+    <section class="hero">
+        <img src="assets/icon.png" alt="Kokoro Reader App Icon" class="hero-icon">
+        <br>
         <div class="badge">Pinto Beans Labs</div>
         <h1>Kokoro Reader</h1>
-        <p class="tagline">100% Offline, On-Device AI Neural Audiobook & Ebook Reader for Android.</p>
-        <p class="brand-credit">Package ID: <code>com.pintobeanslabs.kokororeader</code></p>
-    </header>
+        <p class="tagline">Turn any ebook or document into a studio-quality audiobook. 100% Offline, on-device neural AI for Android.</p>
+        <p class="brand-credit">Package ID: <code>com.pintobeanslabs.kokororeader</code> &bull; Zero Ads &bull; Zero Subscriptions</p>
+    </section>
 
-    <!-- Features -->
-    <div class="features-grid">
+    <!-- Promotional Feature Banner -->
+    <div class="banner-showcase">
+        <img src="assets/feature_graphic.png" alt="Kokoro Reader Google Play Feature Graphic Banner">
+    </div>
+
+    <!-- Core Features Grid -->
+    <section id="features" class="features-grid">
         <div class="feature-card">
             <div class="feature-icon">🛡️</div>
             <div class="feature-title">100% On-Device Privacy</div>
-            <div class="feature-desc">All AI neural speech synthesis runs locally on your phone's processor. Zero bytes ever leave your device.</div>
+            <div class="feature-desc">All AI neural speech synthesis runs locally on your phone's processor. Zero bytes of book text or audio ever leave your device.</div>
         </div>
         <div class="feature-card">
             <div class="feature-icon">✈️</div>
             <div class="feature-title">True Offline Independence</div>
-            <div class="feature-desc">Listen in airplane mode, deep underground subways, or remote outdoors without mobile data or internet lag.</div>
+            <div class="feature-desc">Listen in airplane mode, deep subways, daily commutes, or remote outdoors without mobile data or internet streaming lag.</div>
         </div>
         <div class="feature-card">
             <div class="feature-icon">⚙️</div>
             <div class="feature-title">System-Wide TTS Engine</div>
-            <div class="feature-desc">Use it inside our built-in reader or as Android's default speech engine for Moon+ Reader, ReadEra, and Google Books.</div>
+            <div class="feature-desc">Use it inside our built-in reader or set it as Android's default speech engine to upgrade Moon+ Reader, ReadEra, and Google Books.</div>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🎙️</div>
             <div class="feature-title">17 Curated Neural Voices</div>
-            <div class="feature-desc">Features human-like cadence, warm narrators, and soothing soft-bass voices with punctuation-based prosody steering.</div>
+            <div class="feature-desc">Features human-like cadence, warm narrators, and soothing soft-bass profiles with punctuation-based prosody steering.</div>
         </div>
-    </div>
+    </section>
+
+    <!-- Device Screenshots Gallery -->
+    <section id="screenshots">
+        <div class="gallery-header">
+            <h2>App Screenshots</h2>
+            <p>Designed with modern Material 3 and Jetpack Compose for Android</p>
+        </div>
+        <div class="screenshots-grid">
+            <div class="screenshot-item">
+                <div class="phone-frame">
+                    <img src="assets/screenshot_1_home.png" alt="Home Library Screen">
+                </div>
+                <div class="screenshot-caption">Ebook Library &amp; Import</div>
+            </div>
+            <div class="screenshot-item">
+                <div class="phone-frame">
+                    <img src="assets/screenshot_2_reader.png" alt="Ebook Reader with Sentence Tracking">
+                </div>
+                <div class="screenshot-caption">Karaoke Sentence Tracking</div>
+            </div>
+            <div class="screenshot-item">
+                <div class="phone-frame">
+                    <img src="assets/screenshot_3_voices.png" alt="Curated Neural Voices Modal">
+                </div>
+                <div class="screenshot-caption">17 Curated Voices &amp; Speed</div>
+            </div>
+            <div class="screenshot-item">
+                <div class="phone-frame">
+                    <img src="assets/screenshot_4_settings.png" alt="System TTS Settings Screen">
+                </div>
+                <div class="screenshot-caption">System TTS Engine Preview</div>
+            </div>
+        </div>
+    </section>
 
     <!-- Official Privacy Policy -->
     <section class="policy-section" id="privacy">
@@ -295,13 +513,13 @@
 
         <div class="policy-block">
             <h3>5. Contact Us</h3>
-            <p>If you have any questions or feedback regarding our privacy practices or Kokoro Reader, please visit our official repository or contact Pinto Beans Labs.</p>
+            <p>If you have any questions or feedback regarding our privacy practices or Kokoro Reader, please visit our official <a href="https://github.com/das-analyst/kokororeader" target="_blank" rel="noopener">GitHub repository</a>.</p>
         </div>
     </section>
 
     <footer>
         <p>&copy; 2026 Pinto Beans Labs. All rights reserved.</p>
-        <p>Kokoro Reader &bull; <a href="#privacy">Privacy Policy</a> &bull; <a href="https://github.com/pintobeanslabs/kokororeader" target="_blank" rel="noopener">GitHub Repository</a></p>
+        <p>Kokoro Reader &bull; <a href="#privacy">Privacy Policy</a> &bull; <a href="https://github.com/das-analyst/kokororeader" target="_blank" rel="noopener">GitHub Repository</a></p>
     </footer>
 </div>
 
