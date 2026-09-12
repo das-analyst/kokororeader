@@ -2,6 +2,8 @@
 
 **Developer Name:** Pinto Beans Labs  
 **Package Name (`applicationId`):** `com.pintobeanslabs.kokororeader`  
+**Privacy Policy URL:** `https://das-analyst.github.io/kokororeader/#privacy`  
+**GitHub Repository:** `https://github.com/das-analyst/kokororeader`  
 **Category:** Books & Reference (or Tools)  
 **Content Rating:** Everyone / PEGI 3  
 
