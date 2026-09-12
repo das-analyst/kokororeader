@@ -15,7 +15,11 @@ models/voices-v1.0.bin
 **/build/
 **/.cxx/
 local.properties
+keystore.properties
+*.jks
+*.keystore
 *.iml
 .idea/
 .DS_Store
 Thumbs.db
+scratch/

@@ -2,6 +2,8 @@ package com.kokoro.tts.engine
 
 import android.content.Context
 import android.util.Log
+import com.kokoro.tts.engine.normalizer.TextNormalizer
+import com.kokoro.tts.reader.manager.PronunciationManager
 
 /**
  * Converts English text to IPA phonemes compatible with the Kokoro model.
@@ -15,6 +17,7 @@ class PhonemeConverter(
         private const val TAG = "PhonemeConverter"
     }
 
+    private val appContext = context.applicationContext
     private val espeakBridge = EspeakBridge(context)
 
     init {
@@ -41,41 +44,12 @@ class PhonemeConverter(
     }
 
     /**
-     * Normalize numbers, times, and symbols that eSpeak may mispronounce.
+     * Normalize written text into natural spoken words (NeMo TN architecture),
+     * with custom pronunciation dictionary rules applied first.
      */
     fun normalizeText(text: String): String {
-        var t = text.trim()
-
-        // Time format: 3:30pm -> 3 30 pm, 12:00 -> 12 o'clock
-        t = Regex("(\\d{1,2}):(\\d{2})\\s*([AaPp][Mm])?").replace(t) { match ->
-            val hour = match.groupValues[1]
-            val min = match.groupValues[2].toIntOrNull() ?: 0
-            val ampm = match.groupValues[3]
-            val minPart = when {
-                min == 0 -> "o'clock"
-                min < 10 -> "oh $min"
-                else -> "$min"
-            }
-            val suffix = if (ampm.isNotBlank()) " $ampm" else ""
-            "$hour $minPart$suffix"
-        }
-
-        // Currency: $10.50 -> 10 dollars and 50 cents
-        t = Regex("\\$\\s*(\\d+)\\.(\\d{2})\\b").replace(t) { match ->
-            val dollars = match.groupValues[1]
-            val cents = match.groupValues[2].toIntOrNull() ?: 0
-            if (cents == 0) "$dollars dollars" else "$dollars dollars and $cents cents"
-        }
-
-        // Currency: $100 -> 100 dollars
-        t = Regex("\\$\\s*(\\d+)\\b").replace(t) { match ->
-            "${match.groupValues[1]} dollars"
-        }
-
-        // Number ranges: 5-10 -> 5 to 10
-        t = Regex("(?<=\\d)-(?=\\d)").replace(t, " to ")
-
-        return t
+        val withPronunciationRules = PronunciationManager.getInstance(appContext).applyRules(text)
+        return TextNormalizer.normalize(withPronunciationRules)
     }
 
     /**

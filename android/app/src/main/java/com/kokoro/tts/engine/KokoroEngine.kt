@@ -28,6 +28,8 @@ class KokoroEngine(
     private var session: OrtSession? = null
     private var tokensInputName: String = "tokens"
 
+    fun isInitialized(): Boolean = session != null
+
     @Synchronized
     fun initialize(): Boolean {
         if (session != null) return true
@@ -35,12 +37,6 @@ class KokoroEngine(
         return try {
             val startTime = System.currentTimeMillis()
             env = OrtEnvironment.getEnvironment()
-
-            val options = OrtSession.SessionOptions().apply {
-                val threads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
-                setIntraOpNumThreads(threads)
-                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            }
 
             // Copy model to internal storage if not already there, for zero-copy file mapping
             val modelFile = File(context.filesDir, modelAssetPath)
@@ -53,7 +49,34 @@ class KokoroEngine(
                 }
             }
 
-            session = env!!.createSession(modelFile.absolutePath, options)
+            var sess: OrtSession? = null
+
+            // Strategy 1: Attempt XNNPACK acceleration on ARMv9 Cortex-X4/A715 cores
+            try {
+                val xnnpackOptions = OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(3)
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                    setMemoryPatternOptimization(true)
+                    addXnnpack(mapOf("intra_op_num_threads" to "3"))
+                }
+                sess = env!!.createSession(modelFile.absolutePath, xnnpackOptions)
+                Log.i(TAG, "Successfully initialized ONNX Runtime session with XNNPACK acceleration")
+            } catch (e: Throwable) {
+                Log.i(TAG, "XNNPACK not available (${e.message}), using optimized CPU")
+            }
+
+            // Strategy 2: High-performance CPU configuration pinned to 3 Big/Prime cores
+            if (sess == null) {
+                val cpuOptions = OrtSession.SessionOptions().apply {
+                    setIntraOpNumThreads(3)
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                    setMemoryPatternOptimization(true)
+                }
+                sess = env!!.createSession(modelFile.absolutePath, cpuOptions)
+                Log.i(TAG, "Successfully initialized ONNX Runtime session on Tensor G3 Big Cores (3 threads)")
+            }
+
+            session = sess
 
             // Detect whether the model calls the token input 'tokens' or 'input_ids'
             val inputNames = session!!.inputNames
@@ -112,8 +135,11 @@ class KokoroEngine(
             }
             results.close()
 
+            // Trim excessive trailing vocoder silence to a natural ~50ms decay
+            val trimmedAudio = trimTrailingSilence(floatAudio)
+
             // Convert float32 [-1.0, 1.0] to 16-bit PCM bytes
-            floatToPcm16(floatAudio)
+            floatToPcm16(trimmedAudio)
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during synthesis", e)
             null
@@ -122,6 +148,32 @@ class KokoroEngine(
             styleTensor.close()
             speedTensor.close()
         }
+    }
+
+    /**
+     * Trims excessive trailing silence produced by Kokoro vocoder, leaving a clean
+     * ~50 ms natural room-decay with a 10 ms linear fade-out to prevent audio pops.
+     */
+    private fun trimTrailingSilence(
+        floats: FloatArray,
+        threshold: Float = 0.008f,
+        keepSamples: Int = 1200 // 50ms at 24kHz
+    ): FloatArray {
+        var lastAudible = floats.size - 1
+        while (lastAudible >= 0 && kotlin.math.abs(floats[lastAudible]) < threshold) {
+            lastAudible--
+        }
+        if (lastAudible <= 0) return floats
+
+        val end = minOf(floats.size, lastAudible + keepSamples)
+        val fadeSamples = minOf(240, end - lastAudible)
+        val trimmed = floats.copyOfRange(0, end)
+        for (i in 0 until fadeSamples) {
+            val idx = end - fadeSamples + i
+            val factor = 1.0f - (i.toFloat() / fadeSamples)
+            trimmed[idx] *= factor
+        }
+        return trimmed
     }
 
     /**

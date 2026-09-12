@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="20dp"
+    android:paddingBottom="16dp">
+
+    <!-- Loading State -->
+    <LinearLayout
+        android:id="@+id/layoutConverting"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp">
+
+        <ProgressBar
+            android:id="@+id/pbConverting"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:indeterminateTint="#1976D2" />
+
+        <TextView
+            android:id="@+id/tvConvertingStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Converting ebook to readable text..."
+            android:textSize="15sp"
+            android:textAlignment="center"
+            android:textColor="#333333" />
+    </LinearLayout>
+
+    <!-- Preview & Save State -->
+    <LinearLayout
+        android:id="@+id/layoutPreview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Convert Ebook to Text"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="#1A1C1E" />
+
+            <TextView
+                android:id="@+id/tvFormatBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="EPUB"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="#1976D2"
+                android:background="#E3F2FD"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+        </LinearLayout>
+
+        <!-- Book Title Input -->
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Book Title"
+            app:boxStrokeColor="#1976D2"
+            app:hintTextColor="#1976D2"
+            app:boxCornerRadiusTopStart="10dp"
+            app:boxCornerRadiusTopEnd="10dp"
+            app:boxCornerRadiusBottomStart="10dp"
+            app:boxCornerRadiusBottomEnd="10dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etBookTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="15sp"
+                android:textColor="#1A1C1E"
+                android:singleLine="true" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Stats Bar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="#E8F5E9"
+            android:padding="8dp"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/tvConversionStats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="✔ 20 Chapters • ~174,042 words • 956 KB"
+                android:textSize="12sp"
+                android:textColor="#2E7D32"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Text Preview Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TEXT PREVIEW"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="#757575"
+            android:layout_marginTop="12dp" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="110dp"
+            android:background="#F5F5F5"
+            android:padding="10dp"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:id="@+id/tvTextPreview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#424242"
+                android:lineSpacingMultiplier="1.2" />
+        </ScrollView>
+
+        <!-- Speech Normalization Checkbox -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/cbNormalizeSpeech"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Normalize text for reading (expand $10 → ten dollars, Henry VIII → Henry the Eighth)"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:checked="false" />
+
+        <ProgressBar
+            android:id="@+id/pbNormalizing"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:indeterminate="true"
+            android:indeterminateTint="#1976D2"
+            android:visibility="gone"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp" />
+
+        <!-- Destination Notice -->
+        <TextView
+            android:id="@+id/tvDestinationInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📁 Saves to: Downloads folder + Local Library"
+            android:textSize="11sp"
+            android:textColor="#616161"
+            android:layout_marginTop="6dp" />
+
+        <!-- Primary Action: Save to Library -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSaveToLibrary"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:layout_marginTop="12dp"
+            android:text="Save to Library"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            app:cornerRadius="10dp"
+            app:icon="@android:drawable/ic_menu_save"
+            app:iconGravity="textStart"
+            android:backgroundTint="#1976D2"
+            android:textColor="#FFFFFF" />
+
+        <!-- Secondary Actions Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnExportTxt"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Export To..."
+                android:textSize="13sp"
+                app:cornerRadius="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnReadNow"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Read Now"
+                android:textSize="13sp"
+                app:cornerRadius="8dp"
+                app:icon="@android:drawable/ic_media_play"
+                app:iconGravity="textStart" />
+        </LinearLayout>
+
+        <!-- Close Button -->
+        <Button
+            android:id="@+id/btnCloseDialog"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Close"
+            android:textColor="#757575" />
+
+    </LinearLayout>
+
+</LinearLayout>

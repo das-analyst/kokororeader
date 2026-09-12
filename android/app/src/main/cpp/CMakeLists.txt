@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
 project(espeak_jni LANGUAGES C CXX)
 
+set(CMAKE_SKIP_RPATH TRUE)
+
+# Enforce 16 KB ELF page alignment for Android 15+ compatibility
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384")
+
 include(FetchContent)
 
 # Fetch espeak-ng (cmake fork widely used by sherpa-onnx)
@@ -30,9 +35,13 @@ add_library(espeak_jni SHARED
 
 target_include_directories(espeak_jni PRIVATE
     ${espeak_ng_SOURCE_DIR}/src/include
+    ${espeak_ng_SOURCE_DIR}/src/ucd-tools/src/include
 )
 
 target_link_libraries(espeak_jni PRIVATE
+    -Wl,--whole-archive
     espeak-ng
+    ucd
+    -Wl,--no-whole-archive
     log
 )
