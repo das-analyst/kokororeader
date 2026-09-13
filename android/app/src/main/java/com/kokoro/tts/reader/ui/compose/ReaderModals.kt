@@ -34,8 +34,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.kokoro.tts.engine.director.SpeechDirector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -66,10 +69,14 @@ fun ReaderModalContainer(
     currentLineSpacing: Float,
     currentVoiceId: String,
     currentSpeed: Float,
+    currentExpressionIntensity: Float,
+    currentTemperament: SpeechDirector.TemperamentPreset,
+    currentEnableDualTone: Boolean,
     availableVoiceIds: List<String>,
     chapters: List<Chapter>,
     currentChapterIndex: Int,
     sleepTimerMode: SleepTimerManager.SleepTimerMode,
+    isWindDownEnabled: Boolean,
     pronunciationRules: Map<String, String>,
     onDismiss: () -> Unit,
     onThemeSelected: (ReaderTheme) -> Unit,
@@ -77,8 +84,12 @@ fun ReaderModalContainer(
     onLineSpacingSelected: (Float) -> Unit,
     onVoiceSelected: (String) -> Unit,
     onSpeedSelected: (Float) -> Unit,
+    onExpressionIntensitySelected: (Float) -> Unit,
+    onTemperamentSelected: (SpeechDirector.TemperamentPreset) -> Unit,
+    onDualToneToggled: (Boolean) -> Unit,
     onChapterSelected: (Int) -> Unit,
     onSleepTimerSelected: (SleepTimerManager.SleepTimerMode) -> Unit,
+    onWindDownToggled: (Boolean) -> Unit,
     onAddPronunciationRule: (word: String, replacement: String) -> Unit,
     onDeletePronunciationRule: (word: String) -> Unit
 ) {
@@ -115,21 +126,29 @@ fun ReaderModalContainer(
                     VoiceSpeedSheetContent(
                         currentVoiceId = currentVoiceId,
                         currentSpeed = currentSpeed,
+                        currentExpressionIntensity = currentExpressionIntensity,
+                        currentTemperament = currentTemperament,
+                        currentEnableDualTone = currentEnableDualTone,
                         availableVoiceIds = availableVoiceIds,
                         readerColors = readerColors,
                         onVoiceSelected = onVoiceSelected,
-                        onSpeedSelected = onSpeedSelected
+                        onSpeedSelected = onSpeedSelected,
+                        onExpressionIntensitySelected = onExpressionIntensitySelected,
+                        onTemperamentSelected = onTemperamentSelected,
+                        onDualToneToggled = onDualToneToggled
                     )
                 }
 
                 ReaderModalSheet.SLEEP_TIMER -> {
                     SleepTimerSheetContent(
                         currentMode = sleepTimerMode,
+                        isWindDownEnabled = isWindDownEnabled,
                         readerColors = readerColors,
                         onSelectMode = {
                             onSleepTimerSelected(it)
                             onDismiss()
-                        }
+                        },
+                        onWindDownToggled = onWindDownToggled
                     )
                 }
 
@@ -296,13 +315,19 @@ private fun AppearanceSheetContent(
 private fun VoiceSpeedSheetContent(
     currentVoiceId: String,
     currentSpeed: Float,
+    currentExpressionIntensity: Float,
+    currentTemperament: SpeechDirector.TemperamentPreset,
+    currentEnableDualTone: Boolean,
     availableVoiceIds: List<String>,
     readerColors: ReaderColors,
     onVoiceSelected: (String) -> Unit,
-    onSpeedSelected: (Float) -> Unit
+    onSpeedSelected: (Float) -> Unit,
+    onExpressionIntensitySelected: (Float) -> Unit,
+    onTemperamentSelected: (SpeechDirector.TemperamentPreset) -> Unit,
+    onDualToneToggled: (Boolean) -> Unit
 ) {
     Text(
-        text = "Voice & Speed Settings",
+        text = "Voice & Delivery Performance",
         fontSize = 18.sp,
         fontWeight = FontWeight.Bold,
         color = readerColors.primaryText
@@ -366,7 +391,7 @@ private fun VoiceSpeedSheetContent(
             color = readerColors.secondaryText
         )
         Text(
-            text = "${String.format("%.2fx", currentSpeed)}",
+            text = "${String.format(java.util.Locale.US, "%.2fx", currentSpeed)}",
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF1976D2)
@@ -396,6 +421,211 @@ private fun VoiceSpeedSheetContent(
             )
         }
     }
+
+    Spacer(modifier = Modifier.height(20.dp))
+    HorizontalDivider(color = if (readerColors.isDark) Color(0x22FFFFFF) else Color(0x11000000))
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // -------------------------------------------------------------------------
+    // Narrator Temperament Presets
+    // -------------------------------------------------------------------------
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "NARRATOR TEMPERAMENT",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = readerColors.secondaryText
+        )
+        Text(
+            text = currentTemperament.title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1976D2)
+        )
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = SpeechDirector.getPersonaDescription(currentVoiceId, currentTemperament),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        color = if (readerColors.isDark) Color(0xFF90CAF9) else Color(0xFF1565C0)
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        items(SpeechDirector.TemperamentPreset.values()) { preset ->
+            val isSelected = preset == currentTemperament
+            FilterChip(
+                selected = isSelected,
+                onClick = {
+                    onTemperamentSelected(preset)
+                },
+                label = {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text(
+                            text = preset.title,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            text = preset.description,
+                            fontSize = 10.sp,
+                            color = if (isSelected) Color(0xFF1976D2) else readerColors.secondaryText
+                        )
+                    }
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = if (readerColors.isDark) Color(0xFF243048) else Color(0xFFD6E4FF),
+                    selectedLabelColor = if (readerColors.isDark) Color.White else Color(0xFF001B3E)
+                )
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(20.dp))
+
+    // -------------------------------------------------------------------------
+    // Expression Intensity with Outcome-Focused Cognitive Feedback
+    // -------------------------------------------------------------------------
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "EXPRESSION INTENSITY",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = readerColors.secondaryText
+        )
+        Text(
+            text = "${(currentExpressionIntensity * 100).toInt()}%",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1976D2)
+        )
+    }
+
+    Slider(
+        value = currentExpressionIntensity,
+        onValueChange = onExpressionIntensitySelected,
+        valueRange = 0.0f..1.0f,
+        steps = 20,
+        colors = SliderDefaults.colors(
+            thumbColor = Color(0xFF1976D2),
+            activeTrackColor = Color(0xFF1976D2)
+        )
+    )
+
+    // Dynamic Outcome Feedback Card (framing the cognitive outcome trade-off)
+    val (outcomeTitle, outcomeBadge, outcomeBadgeBg, outcomeDesc) = when {
+        currentExpressionIntensity < 0.25f -> listOf(
+            "Strictly Predictable Cadence",
+            "Lowest Fatigue",
+            Color(0xFF2E7D32),
+            "Steady, drone-resistant pacing with zero sudden tempo jumps. Lowest cognitive strain for multi-hour sessions, but can feel monotonous over time."
+        )
+        currentExpressionIntensity <= 0.70f -> listOf(
+            "Balanced Storyteller",
+            "Recommended Focus",
+            Color(0xFF1976D2),
+            "Subtle prosodic shifts and character nuance without jarring tempo swings. Keeps attention engaged while preventing headphone fatigue."
+        )
+        else -> listOf(
+            "Dynamic Theatrical Drama",
+            "Higher Fatigue",
+            Color(0xFFE65100),
+            "Vivid emotional voice blends and dramatic tempo contrasts (whispers slow down, shouts speed up). Highly engaging, but higher listening fatigue over long sessions."
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (readerColors.isDark) Color(0x18FFFFFF) else Color(0x0A000000))
+            .border(
+                1.dp,
+                if (readerColors.isDark) Color(0x28FFFFFF) else Color(0x18000000),
+                RoundedCornerShape(10.dp)
+            )
+            .padding(12.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = outcomeTitle as String,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = readerColors.primaryText
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background((outcomeBadgeBg as Color).copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = outcomeBadge as String,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = outcomeBadgeBg
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = outcomeDesc as String,
+                fontSize = 11.sp,
+                color = readerColors.secondaryText,
+                lineHeight = 15.sp
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(20.dp))
+    HorizontalDivider(color = if (readerColors.isDark) Color(0x22FFFFFF) else Color(0x11000000))
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // -------------------------------------------------------------------------
+    // Dual-Tone Character Dialogue Toggle
+    // -------------------------------------------------------------------------
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = "Dual-Tone Dialogue",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = readerColors.primaryText
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Subtly shifts character speech timbre and tempo so quotes stand out clearly from narrative exposition.",
+                fontSize = 11.sp,
+                color = readerColors.secondaryText,
+                lineHeight = 15.sp
+            )
+        }
+        Switch(
+            checked = currentEnableDualTone,
+            onCheckedChange = onDualToneToggled
+        )
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -404,8 +634,10 @@ private fun VoiceSpeedSheetContent(
 @Composable
 private fun SleepTimerSheetContent(
     currentMode: SleepTimerManager.SleepTimerMode,
+    isWindDownEnabled: Boolean,
     readerColors: ReaderColors,
-    onSelectMode: (SleepTimerManager.SleepTimerMode) -> Unit
+    onSelectMode: (SleepTimerManager.SleepTimerMode) -> Unit,
+    onWindDownToggled: (Boolean) -> Unit
 ) {
     Text(
         text = "Sleep Timer",
@@ -441,6 +673,36 @@ private fun SleepTimerSheetContent(
                 )
             }
         }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    HorizontalDivider(color = if (readerColors.isDark) Color(0x22FFFFFF) else Color(0x11000000))
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = "Prosody Wind-Down (Sleep Curve)",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = readerColors.primaryText
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Gradually slows tempo, expands pauses, and softens voice volume over the final 10 minutes to help you drift to sleep.",
+                fontSize = 11.sp,
+                color = readerColors.secondaryText,
+                lineHeight = 15.sp
+            )
+        }
+        Switch(
+            checked = isWindDownEnabled,
+            onCheckedChange = onWindDownToggled
+        )
     }
 }
 

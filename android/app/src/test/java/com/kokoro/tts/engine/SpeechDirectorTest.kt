@@ -221,4 +221,157 @@ class SpeechDirectorTest {
         // Nuanced pacing (0.97x aside multiplier)
         assertEquals(0.97f, directed.effectiveSpeed, 0.001f)
     }
+
+    @Test
+    fun testExpressionIntensityScaling() {
+        val whisperSentence = SentenceItem(
+            index = 0,
+            text = "\"Stay back,\" she whispered into the darkness.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = true
+        )
+
+        // 1. Intensity 0.0: Flat cadence (drone-resistant predictability), 0 donor blend
+        val configFlat = SpeechDirector.DirectorConfig(expressionIntensity = 0.0f)
+        val directedFlat = SpeechDirector.direct(whisperSentence, baseVoice = "af_heart", config = configFlat)
+        assertEquals(1.00f, directedFlat.effectiveSpeed, 0.001f)
+        assertEquals(null, directedFlat.donorVoice)
+        assertEquals(0.0f, directedFlat.blendWeight, 0.001f)
+
+        // 2. Intensity 0.5: Half variance (0.95x speed, 0.25 blend weight)
+        val configHalf = SpeechDirector.DirectorConfig(expressionIntensity = 0.5f)
+        val directedHalf = SpeechDirector.direct(whisperSentence, baseVoice = "af_heart", config = configHalf)
+        assertEquals(0.95f, directedHalf.effectiveSpeed, 0.001f)
+        assertEquals("af_nicole", directedHalf.donorVoice)
+        assertEquals(0.25f, directedHalf.blendWeight, 0.001f)
+
+        // 3. Intensity 1.0: Full dynamic drama (0.90x speed, 0.50 blend weight)
+        val configFull = SpeechDirector.DirectorConfig(expressionIntensity = 1.0f)
+        val directedFull = SpeechDirector.direct(whisperSentence, baseVoice = "af_heart", config = configFull)
+        assertEquals(0.90f, directedFull.effectiveSpeed, 0.001f)
+        assertEquals("af_nicole", directedFull.donorVoice)
+        assertEquals(0.50f, directedFull.blendWeight, 0.001f)
+    }
+
+    @Test
+    fun testTemperamentPresets() {
+        val standardSentence = SentenceItem(
+            index = 0,
+            text = "It was a dark and stormy night.",
+            chapterIndex = 0,
+            isParagraphEnd = true,
+            isDialogue = false
+        )
+
+        // Calm: 0.94x base speed, +35% pauses (1400 * 1.35 = 1890ms), persona donor af_sarah
+        val calmConfig = SpeechDirector.DirectorConfig(
+            temperament = SpeechDirector.TemperamentPreset.CALM,
+            expressionIntensity = 0.50f
+        )
+        val directedCalm = SpeechDirector.direct(standardSentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = calmConfig)
+        assertEquals(0.94f, directedCalm.effectiveSpeed, 0.01f)
+        assertEquals(1890L, directedCalm.postSilenceMs)
+        assertEquals("af_sarah", directedCalm.donorVoice)
+        assertEquals(0.4625f, directedCalm.blendWeight, 0.001f)
+        assertEquals(1.00f, directedCalm.gain, 0.01f)
+
+        // Sprint: 1.14x base speed, -50% pauses (1400 * 0.50 = 700ms), persona donor af_sky
+        val sprintConfig = SpeechDirector.DirectorConfig(
+            temperament = SpeechDirector.TemperamentPreset.SPRINT,
+            expressionIntensity = 0.40f
+        )
+        val directedSprint = SpeechDirector.direct(standardSentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = sprintConfig)
+        assertEquals(1.14f, directedSprint.effectiveSpeed, 0.01f)
+        assertEquals(700L, directedSprint.postSilenceMs)
+        assertEquals("af_sky", directedSprint.donorVoice)
+        assertEquals(0.4095f, directedSprint.blendWeight, 0.001f)
+        assertEquals(1.00f, directedSprint.gain, 0.01f)
+
+        // Theatrical: 1.02x base speed, +35% pauses (1890ms), persona donor af_bella, +0.5dB gain (1.05x)
+        val theatricalConfig = SpeechDirector.DirectorConfig(
+            temperament = SpeechDirector.TemperamentPreset.THEATRICAL,
+            expressionIntensity = 0.85f
+        )
+        val directedTheatrical = SpeechDirector.direct(standardSentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = theatricalConfig)
+        assertEquals(1.02f, directedTheatrical.effectiveSpeed, 0.01f)
+        assertEquals(1890L, directedTheatrical.postSilenceMs)
+        assertEquals("af_bella", directedTheatrical.donorVoice)
+        assertEquals(1.05f, directedTheatrical.gain, 0.01f)
+
+        // Bedtime: Shouts are suppressed to prevent jarring wakeups, persona donor af_nicole, -1.8dB gentle gain (0.82x)
+        val shoutSentence = SentenceItem(
+            index = 1,
+            text = "\"Wake up right now!\" she screamed.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = true
+        )
+        val bedtimeConfig = SpeechDirector.DirectorConfig(
+            temperament = SpeechDirector.TemperamentPreset.BEDTIME,
+            expressionIntensity = 0.40f
+        )
+        val directedBedtime = SpeechDirector.direct(shoutSentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = bedtimeConfig)
+        // Shouting suppressed: no Bella donor voice, no urgent speedup
+        assertTrue(directedBedtime.donorVoice != "af_bella")
+        assertTrue(directedBedtime.effectiveSpeed <= 1.0f)
+        assertEquals("af_nicole", directedBedtime.donorVoice)
+        assertEquals(0.82f, directedBedtime.gain, 0.01f)
+    }
+
+    @Test
+    fun testDualToneDialogueDistinction() {
+        val dialogueSentence = SentenceItem(
+            index = 0,
+            text = "\"Let's head toward the harbor,\" Jack suggested.",
+            chapterIndex = 0,
+            isParagraphEnd = false,
+            isDialogue = true
+        )
+
+        // Without Dual-Tone: Dialogue has no emotional donor
+        val configNoDual = SpeechDirector.DirectorConfig(enableDualTone = false)
+        val directedNoDual = SpeechDirector.direct(dialogueSentence, baseVoice = "af_heart", config = configNoDual)
+        assertEquals(null, directedNoDual.donorVoice)
+
+        // With Dual-Tone: Subtle conversational donor is blended
+        val configWithDual = SpeechDirector.DirectorConfig(enableDualTone = true, expressionIntensity = 1.0f)
+        val directedWithDual = SpeechDirector.direct(dialogueSentence, baseVoice = "af_heart", config = configWithDual)
+        assertEquals("af_bella", directedWithDual.donorVoice)
+        assertEquals(0.18f, directedWithDual.blendWeight, 0.001f)
+    }
+
+    @Test
+    fun testWindDownProsodyCurve() {
+        val sentence = SentenceItem(
+            index = 0,
+            text = "She closed her eyes and listened to the gentle rain.",
+            chapterIndex = 0,
+            isParagraphEnd = true,
+            isDialogue = false
+        )
+
+        // At 0% progress: Standard speed (1.0x), paragraph pause (1400ms), gain 1.0x
+        val directedStart = SpeechDirector.direct(sentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = SpeechDirector.DirectorConfig(windDownProgress = 0.0f))
+        assertEquals(1.00f, directedStart.effectiveSpeed, 0.01f)
+        assertEquals(1400L, directedStart.postSilenceMs)
+        assertEquals(1.00f, directedStart.gain, 0.01f)
+        assertEquals(null, directedStart.donorVoice)
+
+        // At 50% progress: Decelerated by 10% (0.90x), pauses widened by 50% (2100ms), gain 0.825x, breathy Nicole blend
+        val directedMid = SpeechDirector.direct(sentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = SpeechDirector.DirectorConfig(windDownProgress = 0.50f))
+        assertEquals(0.90f, directedMid.effectiveSpeed, 0.01f)
+        assertEquals(2100L, directedMid.postSilenceMs)
+        assertEquals(0.825f, directedMid.gain, 0.01f)
+        assertEquals("af_nicole", directedMid.donorVoice)
+        assertEquals(0.275f, directedMid.blendWeight, 0.001f)
+
+        // At 100% progress: Decelerated by 20% (0.80x), pauses doubled (2800ms), gain 0.65x (-3.7dB), deep Nicole whisper (55%)
+        val directedEnd = SpeechDirector.direct(sentence, baseSpeed = 1.0f, baseVoice = "af_heart", config = SpeechDirector.DirectorConfig(windDownProgress = 1.0f))
+        assertEquals(0.80f, directedEnd.effectiveSpeed, 0.01f)
+        assertEquals(2800L, directedEnd.postSilenceMs)
+        assertEquals(0.65f, directedEnd.gain, 0.01f)
+        assertEquals("af_nicole", directedEnd.donorVoice)
+        assertEquals(0.55f, directedEnd.blendWeight, 0.001f)
+    }
 }

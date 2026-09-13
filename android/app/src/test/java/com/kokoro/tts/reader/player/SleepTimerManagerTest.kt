@@ -65,4 +65,45 @@ class SleepTimerManagerTest {
         assertTrue(expired)
         assertEquals(SleepTimerManager.SleepTimerMode.OFF, manager.getMode())
     }
+
+    @Test
+    fun testWindDownProgressAcrossFullSpan() {
+        val manager = SleepTimerManager(object : SleepTimerManager.Listener {
+            override fun onTick(remainingMs: Long, formattedTime: String) {}
+            override fun onTimerExpired() {}
+            override fun onModeChanged(mode: SleepTimerManager.SleepTimerMode) {}
+        })
+
+        // 1. Off -> progress 0.0f
+        assertEquals(0.0f, manager.getWindDownProgress(), 0.001f)
+
+        // 2. 30-minute timer mode (1,800,000 ms)
+        manager.setModeForTesting(SleepTimerManager.SleepTimerMode.MIN_30)
+        manager.isWindDownEnabled = true
+
+        // At start (100% remaining) -> progress 0.0f
+        manager.setRemainingMsForTesting(30 * 60 * 1000L)
+        assertEquals(0.0f, manager.getWindDownProgress(), 0.001f)
+
+        // At 15 min remaining (50% elapsed) -> progress 0.5f
+        manager.setRemainingMsForTesting(15 * 60 * 1000L)
+        assertEquals(0.5f, manager.getWindDownProgress(), 0.001f)
+
+        // At 3 min remaining (90% elapsed) -> progress 0.9f
+        manager.setRemainingMsForTesting(3 * 60 * 1000L)
+        assertEquals(0.9f, manager.getWindDownProgress(), 0.001f)
+
+        // At 0 ms -> progress 0.0f (inactive)
+        manager.setRemainingMsForTesting(0L)
+        assertEquals(0.0f, manager.getWindDownProgress(), 0.001f)
+
+        // 3. End of Chapter mode
+        manager.setModeForTesting(SleepTimerManager.SleepTimerMode.END_OF_CHAPTER)
+        manager.chapterProgress = 0.75f
+        assertEquals(0.75f, manager.getWindDownProgress(), 0.001f)
+
+        // 4. When wind-down is disabled
+        manager.isWindDownEnabled = false
+        assertEquals(0.0f, manager.getWindDownProgress(), 0.001f)
+    }
 }

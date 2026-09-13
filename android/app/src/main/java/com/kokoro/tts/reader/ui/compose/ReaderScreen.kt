@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kokoro.tts.engine.director.SpeechDirector
 import com.kokoro.tts.reader.model.ReaderTheme
 import com.kokoro.tts.reader.player.SleepTimerManager
 import com.kokoro.tts.ui.theme.LocalReaderColors
@@ -49,8 +50,12 @@ fun ReaderScreen(
     onLineSpacingSelected: (Float) -> Unit,
     onVoiceSelected: (String) -> Unit,
     onSpeedSelected: (Float) -> Unit,
+    onExpressionIntensitySelected: (Float) -> Unit,
+    onTemperamentSelected: (SpeechDirector.TemperamentPreset) -> Unit,
+    onDualToneToggled: (Boolean) -> Unit,
     onChapterSelected: (Int) -> Unit,
     onSleepTimerSelected: (SleepTimerManager.SleepTimerMode) -> Unit,
+    onWindDownToggled: (Boolean) -> Unit,
     onAddPronunciationRule: (word: String, replacement: String) -> Unit,
     onDeletePronunciationRule: (word: String) -> Unit,
     modifier: Modifier = Modifier
@@ -171,10 +176,14 @@ fun ReaderScreen(
         currentLineSpacing = uiState.lineSpacing,
         currentVoiceId = uiState.voiceId,
         currentSpeed = uiState.speed,
+        currentExpressionIntensity = uiState.expressionIntensity,
+        currentTemperament = uiState.temperament,
+        currentEnableDualTone = uiState.enableDualTone,
         availableVoiceIds = availableVoiceIds,
         chapters = uiState.chapters,
         currentChapterIndex = uiState.currentChapterIndex,
         sleepTimerMode = uiState.sleepTimerMode,
+        isWindDownEnabled = uiState.isWindDownEnabled,
         pronunciationRules = uiState.pronunciationRules,
         onDismiss = onCloseModal,
         onThemeSelected = onThemeSelected,
@@ -182,8 +191,12 @@ fun ReaderScreen(
         onLineSpacingSelected = onLineSpacingSelected,
         onVoiceSelected = onVoiceSelected,
         onSpeedSelected = onSpeedSelected,
+        onExpressionIntensitySelected = onExpressionIntensitySelected,
+        onTemperamentSelected = onTemperamentSelected,
+        onDualToneToggled = onDualToneToggled,
         onChapterSelected = onChapterSelected,
         onSleepTimerSelected = onSleepTimerSelected,
+        onWindDownToggled = onWindDownToggled,
         onAddPronunciationRule = onAddPronunciationRule,
         onDeletePronunciationRule = onDeletePronunciationRule
     )

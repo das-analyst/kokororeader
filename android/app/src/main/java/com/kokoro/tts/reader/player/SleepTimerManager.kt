@@ -29,11 +29,40 @@ class SleepTimerManager(
     private var countDownTimer: CountDownTimer? = null
     private var remainingMs: Long = 0L
 
+    var isWindDownEnabled: Boolean = true
+    var chapterProgress: Float = 0.0f
+
     fun getMode(): SleepTimerMode = currentMode
 
     fun isRunning(): Boolean = currentMode != SleepTimerMode.OFF
 
     fun getRemainingMs(): Long = remainingMs
+
+    fun setRemainingMsForTesting(ms: Long) {
+        remainingMs = ms
+    }
+
+    fun setModeForTesting(mode: SleepTimerMode) {
+        currentMode = mode
+    }
+
+    /**
+     * Returns wind-down progress from 0.0f (timer start) to 1.0f (timer expiration).
+     * Progressively advances across the entire span of the sleep timer set by the user,
+     * so deceleration, pause widening, and volume decrescendo are clearly noticeable.
+     */
+    fun getWindDownProgress(): Float {
+        if (!isWindDownEnabled || currentMode == SleepTimerMode.OFF) {
+            return 0.0f
+        }
+        if (currentMode == SleepTimerMode.END_OF_CHAPTER) {
+            return chapterProgress.coerceIn(0.0f, 1.0f)
+        }
+        val totalMs = currentMode.durationMs
+        if (totalMs <= 0 || remainingMs <= 0) return 0.0f
+        val elapsedRatio = 1.0f - (remainingMs.toFloat() / totalMs.toFloat())
+        return elapsedRatio.coerceIn(0.0f, 1.0f)
+    }
 
     fun startTimer(mode: SleepTimerMode) {
         stopTimer()

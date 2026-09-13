@@ -99,7 +99,8 @@ class KokoroEngine(
     fun synthesizeToPcm(
         tokensWithPadding: LongArray,
         styleVector: FloatArray,
-        speed: Float = 1.0f
+        speed: Float = 1.0f,
+        gain: Float = 1.0f
     ): ByteArray? {
         val sess = session ?: run {
             if (!initialize()) return null
@@ -138,8 +139,8 @@ class KokoroEngine(
             // Trim excessive trailing vocoder silence to a natural ~50ms decay
             val trimmedAudio = trimTrailingSilence(floatAudio)
 
-            // Convert float32 [-1.0, 1.0] to 16-bit PCM bytes
-            floatToPcm16(trimmedAudio)
+            // Convert float32 [-1.0, 1.0] to 16-bit PCM bytes with acoustic gain
+            floatToPcm16(trimmedAudio, gain)
         } catch (e: Exception) {
             Log.e(TAG, "Inference error during synthesis", e)
             null
@@ -177,12 +178,13 @@ class KokoroEngine(
     }
 
     /**
-     * Convert float array [-1.0, 1.0] into Little-Endian 16-bit PCM byte array.
+     * Convert float array [-1.0, 1.0] into Little-Endian 16-bit PCM byte array with gain.
      */
-    private fun floatToPcm16(floats: FloatArray): ByteArray {
+    private fun floatToPcm16(floats: FloatArray, gain: Float = 1.0f): ByteArray {
         val byteBuf = ByteBuffer.allocate(floats.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         for (f in floats) {
-            val clamped = f.coerceIn(-1.0f, 1.0f)
+            val amplified = f * gain
+            val clamped = amplified.coerceIn(-1.0f, 1.0f)
             val pcm = (clamped * 32767.0f).toInt().toShort()
             byteBuf.putShort(pcm)
         }

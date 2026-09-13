@@ -13,6 +13,9 @@ import com.kokoro.tts.engine.Tokenizer
 import com.kokoro.tts.engine.VoiceStyleLoader
 import com.kokoro.tts.engine.director.SpeechDirector
 import com.kokoro.tts.reader.model.SentenceItem
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.Locale
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -57,6 +60,8 @@ class BookPlayer(
 
     var currentVoice: String = KokoroTtsService.DEFAULT_VOICE
     var currentSpeed: Float = 1.0f
+    var directorConfig: SpeechDirector.DirectorConfig = SpeechDirector.DirectorConfig()
+    var sleepTimerManager: SleepTimerManager? = null
 
     private val trackLock = Any()
 
@@ -133,8 +138,9 @@ class BookPlayer(
         preWarmSentence(startIndex)
     }
 
-    private fun getCacheKey(sentence: SentenceItem): String {
-        return "$currentVoice:$currentSpeed:${sentence.text}:${sentence.isParagraphEnd}:${sentence.isDialogue}"
+    private fun getCacheKey(sentence: SentenceItem, windDownProgress: Float = 0.0f): String {
+        val windDownBucket = (windDownProgress * 10).toInt().coerceIn(0, 10)
+        return "$currentVoice:$currentSpeed:${directorConfig.temperament.id}:${String.format(Locale.US, "%.2f", directorConfig.expressionIntensity)}:${directorConfig.enableDualTone}:$windDownBucket:${sentence.text}:${sentence.isParagraphEnd}:${sentence.isDialogue}"
     }
 
     /**
@@ -146,9 +152,11 @@ class BookPlayer(
         Thread({
             val sentence = sentences.getOrNull(index) ?: return@Thread
             val isLast = index == sentences.size - 1
-            val cacheKey = getCacheKey(sentence)
+            val windDown = sleepTimerManager?.getWindDownProgress() ?: 0.0f
+            val cacheKey = getCacheKey(sentence, windDown)
             if (audioCache.get(cacheKey) == null) {
-                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed, currentVoice)
+                val activeConfig = directorConfig.copy(windDownProgress = windDown)
+                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed, currentVoice, activeConfig)
                 val pcm = synthesize(sentence.text, performance)
                 if (pcm != null && pcm.isNotEmpty()) {
                     val silencePcm = SpeechDirector.generateSilencePcm(performance.postSilenceMs, SAMPLE_RATE)
@@ -239,6 +247,30 @@ class BookPlayer(
         clearQueue()
 
         Log.i(TAG, "Seamless voice switch -> $newVoice @ ${"%.2f".format(newSpeed)}x. Current sentence ${currentSentenceIndex.get()} finishing, next sentence $nextIndex queuing with new voice (gen=$newGen).")
+        preWarmSentence(nextIndex)
+    }
+
+    /**
+     * Seamlessly updates the SpeechDirector performance configuration (temperament, intensity, dual-tone).
+     * Purges upcoming lookahead buffer so the next sentence immediately uses the new performance profile.
+     */
+    fun updateDirectorConfig(newConfig: SpeechDirector.DirectorConfig) {
+        if (directorConfig == newConfig) return
+        directorConfig = newConfig
+
+        if (!isPlaying.get()) {
+            clearQueue()
+            preWarmSentence(currentSentenceIndex.get())
+            return
+        }
+
+        val nextIndex = currentSentenceIndex.get() + 1
+        targetSentenceIndex.set(nextIndex)
+
+        val newGen = generationId.incrementAndGet()
+        clearQueue()
+
+        Log.i(TAG, "Performance config switch -> temperament=${newConfig.temperament.id}, intensity=${newConfig.expressionIntensity}. Next sentence $nextIndex queuing with new profile (gen=$newGen).")
         preWarmSentence(nextIndex)
     }
 
@@ -350,8 +382,12 @@ class BookPlayer(
 
                 val sentence = sentences[synthIndex]
                 val isLast = synthIndex == sentences.size - 1
-                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed, currentVoice)
-                val cacheKey = getCacheKey(sentence)
+                val chapterProgress = if (sentences.isNotEmpty()) (synthIndex.toFloat() / maxOf(1, sentences.size - 1).toFloat()) else 0.0f
+                sleepTimerManager?.chapterProgress = chapterProgress
+                val windDown = sleepTimerManager?.getWindDownProgress() ?: 0.0f
+                val activeConfig = directorConfig.copy(windDownProgress = windDown)
+                val performance = SpeechDirector.direct(sentence, isLast, currentSpeed, currentVoice, activeConfig)
+                val cacheKey = getCacheKey(sentence, windDown)
                 val cached = audioCache.get(cacheKey)
 
                 val sentenceAudio = if (cached != null) {
@@ -447,10 +483,28 @@ class BookPlayer(
                 listener?.onSentenceStarted(chunk.sentenceIndex)
                 Log.i(TAG, "Playing sentence ${chunk.sentenceIndex}: ${chunk.pcm.size}B speech + ${chunk.silencePcm.size}B silence (${chunk.silencePcm.size / 48}ms)")
 
-                // 1. Stream speech PCM bytes to AudioTrack in chunks
+                // 1. Stream speech PCM bytes to AudioTrack in chunks (with gentle wind-down fade if near timer expiration)
                 val track = audioTrack ?: continue
+                val windDownProgress = sleepTimerManager?.getWindDownProgress() ?: 0.0f
+                val fadeFactor = if (windDownProgress >= 0.95f) {
+                    (1.0f - (windDownProgress - 0.95f) / 0.05f).coerceIn(0.05f, 1.0f)
+                } else 1.0f
+
+                val data = if (fadeFactor < 0.99f && chunk.pcm.isNotEmpty()) {
+                    val faded = ByteArray(chunk.pcm.size)
+                    val bbIn = ByteBuffer.wrap(chunk.pcm).order(ByteOrder.LITTLE_ENDIAN)
+                    val bbOut = ByteBuffer.wrap(faded).order(ByteOrder.LITTLE_ENDIAN)
+                    while (bbIn.hasRemaining()) {
+                        val sample = bbIn.short
+                        val scaled = (sample * fadeFactor).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                        bbOut.putShort(scaled)
+                    }
+                    faded
+                } else {
+                    chunk.pcm
+                }
+
                 var offset = 0
-                val data = chunk.pcm
                 val chunkSize = 8192
                 val currentSeekGen = chunk.seekGenId
 
@@ -512,7 +566,7 @@ class BookPlayer(
                 performance.blendWeight,
                 tokens.size - 2
             )
-            kokoroEngine.synthesizeToPcm(tokens, styleVector, performance.effectiveSpeed)
+            kokoroEngine.synthesizeToPcm(tokens, styleVector, performance.effectiveSpeed, performance.gain)
         } catch (e: Exception) {
             Log.e(TAG, "Synthesis error for: '$text'", e)
             null
