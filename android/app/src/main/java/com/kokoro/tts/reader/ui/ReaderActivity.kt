@@ -20,6 +20,7 @@ import com.kokoro.tts.engine.KokoroEngine
 import com.kokoro.tts.engine.PhonemeConverter
 import com.kokoro.tts.engine.Tokenizer
 import com.kokoro.tts.engine.VoiceStyleLoader
+import com.kokoro.tts.engine.director.SpeechDirector
 import com.kokoro.tts.reader.manager.LocalBookManager
 import com.kokoro.tts.reader.manager.PronunciationManager
 import com.kokoro.tts.reader.model.Book
@@ -47,6 +48,10 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         private const val KEY_LINE_SPACING = "pref_line_spacing"
         private const val KEY_VOICE = "pref_reading_voice"
         private const val KEY_SPEED = "pref_reading_speed"
+        private const val KEY_EXPRESSION_INTENSITY = "pref_expression_intensity"
+        private const val KEY_TEMPERAMENT = "pref_temperament"
+        private const val KEY_DUAL_TONE = "pref_dual_tone"
+        private const val KEY_SLEEP_WIND_DOWN = "pref_sleep_wind_down"
 
         fun start(context: Context, filePath: String? = null, bookId: String? = null) {
             val intent = Intent(context, ReaderActivity::class.java)
@@ -119,12 +124,16 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
                     onLineSpacingSelected = { spacing -> applyLineSpacing(spacing) },
                     onVoiceSelected = { voiceId -> applyVoice(voiceId) },
                     onSpeedSelected = { speed -> applySpeed(speed) },
+                    onExpressionIntensitySelected = { intensity -> applyExpressionIntensity(intensity) },
+                    onTemperamentSelected = { temperament -> applyTemperament(temperament) },
+                    onDualToneToggled = { enabled -> applyDualTone(enabled) },
                     onChapterSelected = { chIndex ->
                         val isPlaying = player?.isCurrentlyPlaying() ?: false
                         player?.pause()
                         loadChapter(chIndex, startSentenceIndex = 0, autoPlay = isPlaying)
                     },
                     onSleepTimerSelected = { mode -> applySleepTimer(mode) },
+                    onWindDownToggled = { enabled -> applyWindDown(enabled) },
                     onAddPronunciationRule = { word, spoken ->
                         pronManager.addRule(word, spoken)
                         uiState = uiState.copy(pronunciationRules = pronManager.getRules())
@@ -233,6 +242,12 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
         val lineSpacing = prefs.getFloat(KEY_LINE_SPACING, 1.45f)
         val savedVoice = prefs.getString(KEY_VOICE, KokoroTtsService.DEFAULT_VOICE) ?: KokoroTtsService.DEFAULT_VOICE
         val savedSpeed = prefs.getFloat(KEY_SPEED, 1.0f)
+        val savedIntensity = prefs.getFloat(KEY_EXPRESSION_INTENSITY, 0.60f)
+        val savedTemperament = SpeechDirector.TemperamentPreset.fromId(prefs.getString(KEY_TEMPERAMENT, SpeechDirector.TemperamentPreset.NATURAL.id))
+        val savedDualTone = prefs.getBoolean(KEY_DUAL_TONE, true)
+        val savedWindDown = prefs.getBoolean(KEY_SLEEP_WIND_DOWN, true)
+
+        sleepTimerManager.isWindDownEnabled = savedWindDown
 
         uiState = uiState.copy(
             theme = theme,
@@ -240,6 +255,10 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
             lineSpacing = lineSpacing,
             voiceId = savedVoice,
             speed = savedSpeed,
+            expressionIntensity = savedIntensity,
+            temperament = savedTemperament,
+            enableDualTone = savedDualTone,
+            isWindDownEnabled = savedWindDown,
             pronunciationRules = pronManager.getRules()
         )
     }
@@ -265,15 +284,62 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
     private fun applyVoice(voiceId: String) {
         getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
             .edit().putString(KEY_VOICE, voiceId).apply()
-        player?.currentVoice = voiceId
+        player?.updateVoiceAndSpeed(voiceId, uiState.speed)
         uiState = uiState.copy(voiceId = voiceId)
     }
 
     private fun applySpeed(speed: Float) {
         getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
             .edit().putFloat(KEY_SPEED, speed).apply()
-        player?.currentSpeed = speed
+        player?.updateVoiceAndSpeed(uiState.voiceId, speed)
         uiState = uiState.copy(speed = speed)
+    }
+
+    private fun applyExpressionIntensity(intensity: Float) {
+        val clamped = intensity.coerceIn(0.0f, 1.0f)
+        getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+            .edit().putFloat(KEY_EXPRESSION_INTENSITY, clamped).apply()
+        val newConfig = player?.directorConfig?.copy(expressionIntensity = clamped)
+            ?: SpeechDirector.DirectorConfig(expressionIntensity = clamped)
+        player?.updateDirectorConfig(newConfig)
+        uiState = uiState.copy(expressionIntensity = clamped)
+    }
+
+    private fun applyTemperament(temperament: SpeechDirector.TemperamentPreset) {
+        val targetIntensity = temperament.defaultIntensity
+        getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_TEMPERAMENT, temperament.id)
+            .putFloat(KEY_EXPRESSION_INTENSITY, targetIntensity)
+            .apply()
+        val newConfig = player?.directorConfig?.copy(
+            temperament = temperament,
+            expressionIntensity = targetIntensity
+        ) ?: SpeechDirector.DirectorConfig(
+            temperament = temperament,
+            expressionIntensity = targetIntensity
+        )
+        player?.updateDirectorConfig(newConfig)
+        uiState = uiState.copy(
+            temperament = temperament,
+            expressionIntensity = targetIntensity
+        )
+    }
+
+    private fun applyDualTone(enabled: Boolean) {
+        getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_DUAL_TONE, enabled).apply()
+        val newConfig = player?.directorConfig?.copy(enableDualTone = enabled)
+            ?: SpeechDirector.DirectorConfig(enableDualTone = enabled)
+        player?.updateDirectorConfig(newConfig)
+        uiState = uiState.copy(enableDualTone = enabled)
+    }
+
+    private fun applyWindDown(enabled: Boolean) {
+        getSharedPreferences(PREFS_APPEARANCE, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_SLEEP_WIND_DOWN, enabled).apply()
+        sleepTimerManager.isWindDownEnabled = enabled
+        uiState = uiState.copy(isWindDownEnabled = enabled)
     }
 
     private fun applySleepTimer(mode: SleepTimerManager.SleepTimerMode) {
@@ -365,6 +431,12 @@ class ReaderActivity : AppCompatActivity(), BookPlayer.PlaybackListener {
 
         player?.currentVoice = uiState.voiceId
         player?.currentSpeed = uiState.speed
+        player?.sleepTimerManager = sleepTimerManager
+        player?.directorConfig = SpeechDirector.DirectorConfig(
+            expressionIntensity = uiState.expressionIntensity,
+            temperament = uiState.temperament,
+            enableDualTone = uiState.enableDualTone
+        )
 
         val saved = bookId?.let { id -> localBookManager.getAllSavedBooks().find { it.id == id } }
         val startChapter = (saved?.lastReadChapter ?: 0).coerceIn(0, maxOf(0, readyBook.chapters.size - 1))

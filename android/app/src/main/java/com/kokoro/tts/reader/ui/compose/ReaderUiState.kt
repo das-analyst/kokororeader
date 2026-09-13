@@ -1,5 +1,6 @@
 package com.kokoro.tts.reader.ui.compose
 
+import com.kokoro.tts.engine.director.SpeechDirector
 import com.kokoro.tts.reader.model.Chapter
 import com.kokoro.tts.reader.model.ReaderTheme
 import com.kokoro.tts.reader.model.SentenceItem
@@ -26,6 +27,10 @@ data class ReaderUiState(
     val isLoadingBook: Boolean = false,
     val voiceId: String = "af_heart",
     val speed: Float = 1.0f,
+    val expressionIntensity: Float = 0.60f,
+    val temperament: SpeechDirector.TemperamentPreset = SpeechDirector.TemperamentPreset.NATURAL,
+    val enableDualTone: Boolean = true,
+    val isWindDownEnabled: Boolean = true,
     val sleepTimerBadge: String? = null,
     val sleepTimerMode: SleepTimerManager.SleepTimerMode = SleepTimerManager.SleepTimerMode.OFF,
     val theme: ReaderTheme = ReaderTheme.CLEAN_PAPER,
